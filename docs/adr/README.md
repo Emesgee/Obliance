@@ -37,3 +37,4 @@ genbruges, skrives den om her med nyt domænesprog og et link tilbage.
 | [0021](0021-raci-model-og-ansvarshuller.md) | RACI som data — funktioner i matricen, personer pr. kontrakt, huller som regler | Accepted | N17 |
 | [0022](0022-rapporter-og-eksport.md) | Rapporter og eksport — afledte udtræk, samme forespørgsel som skærmen, hver eksport logget | Accepted | N20 |
 | [0023](0023-stak-repo-layout-og-ci-gates.md) | Stak, repo-layout og CI-gates — det, tyve ADR'er har antaget, gjort eksplicit | Accepted | plan §1.1 |
+| [0024](0024-auth-increment-1.md) | Auth, increment 1 — stateless login, RBAC som dependency, første datarute | Proposed | plan §1.2, K05 |

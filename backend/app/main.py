@@ -1,7 +1,7 @@
 """FastAPI application factory.
 
-Only the health endpoints exist yet. Everything that reads customer data goes
-through a tenant context (app.core.rls) — there is no un-scoped data route.
+Everything that reads customer data goes through a tenant context
+(app.core.auth.tenant_session → app.core.rls) — there is no un-scoped data route.
 """
 
 from __future__ import annotations
@@ -9,6 +9,8 @@ from __future__ import annotations
 from fastapi import FastAPI
 from sqlalchemy import text
 
+from app.api import auth as auth_api
+from app.api import contracts as contracts_api
 from app.core.config import settings
 from app.core.db import engine
 
@@ -20,6 +22,8 @@ def create_app() -> FastAPI:
         docs_url="/api/docs" if settings.app_env != "prod" else None,
         openapi_url="/api/openapi.json",
     )
+    app.include_router(auth_api.router)
+    app.include_router(contracts_api.router)
 
     @app.get("/api/health", tags=["health"])
     def health() -> dict[str, str]:

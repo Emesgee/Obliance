@@ -86,11 +86,26 @@ def register_rls() -> None:
     def _on_begin(
         session: Session, transaction: SessionTransaction, connection: Connection
     ) -> None:
-        ctx = _ctx.get()
+        # A context bound to the Session itself wins (bind_session); otherwise the
+        # ambient ContextVar. The binding exists because FastAPI runs sync
+        # dependencies and the endpoint in separate thread contexts, so a
+        # ContextVar set in a dependency is not visible where the query runs.
+        ctx = session.info.get(SESSION_KEY) or _ctx.get()
         if ctx is not None:
             _apply(connection, ctx)
 
     _installed = True
+
+
+SESSION_KEY = "tenant_ctx"
+
+
+def bind_session(session: Session, ctx: TenantContext) -> None:
+    """Pin a TenantContext to one Session: every transaction it opens carries the
+    GUCs, regardless of which thread/context runs the query."""
+    session.info[SESSION_KEY] = ctx
+    if session.in_transaction():
+        _apply(session.connection(), ctx)
 
 
 @contextmanager
@@ -117,10 +132,18 @@ def tenant(
         user_id=None if system else str(user_id),
         role=role,
     )
+    previous = _ctx.get()
     token = _ctx.set(ctx)
     try:
         if session is not None and session.in_transaction():
             _apply(session.connection(), ctx)
         yield ctx
     finally:
-        _ctx.reset(token)
+        try:
+            _ctx.reset(token)
+        except ValueError:
+            # FastAPI runs a sync generator dependency's setup and teardown in
+            # different worker threads (different contextvars.Context), so the
+            # token cannot be reset there. Restoring the previous value is
+            # equivalent and thread-safe.
+            _ctx.set(previous)

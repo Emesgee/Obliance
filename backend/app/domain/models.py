@@ -123,9 +123,24 @@ class Profile(Base):
     title: Mapped[str | None] = mapped_column(Text)
     # Deactivation, never deletion (bidflow ADR-0067; Responsibility Gap reads this).
     deactivated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # ---- auth (ADR-0024). NULL password_hash = SSO-only or not yet set up.
+    password_hash: Mapped[str | None] = mapped_column(Text)
+    email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=text("now()")
     )
+
+
+class RolePermission(Base):
+    """ADR-0003: the role × permission matrix as data. Seeded by migration 0002
+    from app.core.access.MATRIX; a test asserts the two never drift."""
+
+    __tablename__ = "role_permissions"
+    __table_args__ = (PrimaryKeyConstraint("role", "permission"),)
+
+    role: Mapped[MemberRole] = mapped_column(_pg_enum(MemberRole, "member_role"))
+    permission: Mapped[str] = mapped_column(Text)
 
 
 class OrganizationMember(Base):

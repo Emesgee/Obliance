@@ -13,6 +13,11 @@ dependencies = [
     "pydantic-settings>=2.4,<3",
     "redis>=5.0,<6",
     "rq>=2.0,<3",
+    # auth (ADR-0024): stateless JWT, argon2 password hashing, rate limiting
+    "pyjwt>=2.9,<3",
+    "pwdlib[argon2]>=0.2,<1",
+    "limits>=3.13,<6",
+    "email-validator>=2.2,<3",
 ]
 
 [dependency-groups]
@@ -35,8 +40,18 @@ select = ["E", "F", "I", "B", "UP", "ANN"]
 ignore = ["ANN401"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["ANN"]
+"tests/**" = ["ANN", "E501"]
 "migrations/**" = ["ANN", "E501"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's dependency injection IS a call in an argument default — by design.
+extend-immutable-calls = [
+    "fastapi.Depends",
+    "fastapi.params.Depends",
+    "fastapi.Query",
+    "fastapi.Header",
+    "app.core.auth.require",
+]
 
 [tool.mypy]
 python_version = "3.12"

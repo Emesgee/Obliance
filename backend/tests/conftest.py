@@ -20,6 +20,7 @@ from collections.abc import Callable, Generator
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
@@ -34,6 +35,10 @@ TEST_URL = os.environ.setdefault(
 )
 os.environ["DATABASE_URL"] = TEST_URL
 os.environ.setdefault("APP_ENV", "test")
+# Auth (ADR-0024): a fixed test secret, and a login limit generous enough that the
+# suite never trips it; the dedicated rate-limit test tightens it at runtime.
+os.environ.setdefault("SECRET_KEY", "test-secret-not-for-anything-else-0123456789")
+os.environ.setdefault("RATELIMIT_LOGIN", "1000 per minute")
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 
@@ -87,7 +92,8 @@ def Session_(
         rows = conn.execute(
             text(
                 "SELECT tablename FROM pg_tables "
-                "WHERE schemaname='public' AND tablename <> 'alembic_version'"
+                "WHERE schemaname='public' "
+                "AND tablename NOT IN ('alembic_version', 'role_permissions')"  # seeded reference data
             )
         ).fetchall()
         tables = ", ".join(f'"{r[0]}"' for r in rows)
@@ -116,12 +122,28 @@ def make_org(Session_: sessionmaker[Session]) -> Callable[[str], uuid.UUID]:
 
 
 @pytest.fixture
-def make_user(Session_: sessionmaker[Session]) -> Callable[[uuid.UUID, str, str], uuid.UUID]:
-    def _make(org_id: uuid.UUID, email: str, role: str) -> uuid.UUID:
+def client(app_engine: Engine) -> Generator[TestClient, None, None]:
+    """HTTP client over the real app. Depends on app_engine so migrations ran."""
+    from app.main import app
+
+    with TestClient(app) as c:
+        yield c
+
+
+@pytest.fixture
+def make_user(Session_: sessionmaker[Session]) -> Callable[..., uuid.UUID]:
+    def _make(
+        org_id: uuid.UUID, email: str, role: str, *, password: str | None = None
+    ) -> uuid.UUID:
+        from app.core.security import hash_password
         from app.domain.models import MemberRole, OrganizationMember, Profile
 
         with Session_() as s:
-            p = Profile(email=email, name=email.split("@")[0])
+            p = Profile(
+                email=email,
+                name=email.split("@")[0],
+                password_hash=hash_password(password) if password else None,
+            )
             s.add(p)
             s.flush()
             s.add(
