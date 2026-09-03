@@ -10,6 +10,9 @@ export default defineConfig({
     alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
   },
   server: {
+    // Explicit IPv4: on Node ≥17 "localhost" resolves to ::1, so the dev server
+    // would only listen on [::1] and http://127.0.0.1:5173 would refuse.
+    host: "127.0.0.1",
     port: 5173,
     proxy: { "/api": { target: "http://127.0.0.1:8000", changeOrigin: false } },
   },
