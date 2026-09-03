@@ -46,15 +46,16 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Create roles + test database (same SQL as the compose init)
+      # native-setup.sql creates the three roles AND both databases (obliance,
+      # obliance_test) with pgvector — the same script used for a local Postgres
+      # without Docker. 01-roles.sql is Docker-init only: it assumes POSTGRES_DB
+      # already created the app database, which a bare service container has not.
+      - name: Create roles + databases (infra/postgres/native-setup.sql)
         env:
           PGPASSWORD: postgres
         run: |
           sudo apt-get update -q && sudo apt-get install -y -q postgresql-client
-          psql -h localhost -U postgres -v ON_ERROR_STOP=1 -f infra/postgres/init/01-roles.sql
-          psql -h localhost -U postgres -v ON_ERROR_STOP=1 -c "CREATE DATABASE obliance_test OWNER obliance_migrator;"
-          psql -h localhost -U postgres -v ON_ERROR_STOP=1 -d obliance_test -f infra/postgres/init/02-extensions.sql
-          psql -h localhost -U postgres -v ON_ERROR_STOP=1 -d obliance_test -c "ALTER SCHEMA public OWNER TO obliance_migrator;"
+          psql -h localhost -U postgres -v ON_ERROR_STOP=1 -f infra/postgres/native-setup.sql
 
       - name: Install
         working-directory: backend
