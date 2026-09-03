@@ -211,3 +211,13 @@ Vurderet og fravalgt.
 3. **De tre model-frie agenter hedder fortsat "agenter"** i UI'et og bruger samme
    forslags- og godkendelsesflow som de øvrige (ADR-0004), men skriver
    `System · Responsibility Gap` i auditloggen — ikke `AI · …`.
+
+## Implementeringsnote (2026-09-04, første increment)
+
+Tabellen i §1 findes som `backend/app/llm/config.py` (`TASKS`, `PRICES`, `resolve()` med
+`LLM_MODEL_<TASK>`-overstyring); gate G-04 håndhæver, at intet model-id står andre
+steder. `contract_intake` er første opgave i drift; effort sendes som
+`output_config.effort` med `thinking: adaptive`, og adapteren prøver én gang uden
+effort/thinking, hvis en model afviser parametrene. Prompt caching er sat på
+materialeblokken (§4); batch og embeddings er ikke bygget endnu (venter på worker,
+ADR-0010, og på den målte embedding-sammenligning i §2).

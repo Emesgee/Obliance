@@ -5,6 +5,7 @@ Model ids do NOT live here: they belong in app/llm/config.py (ADR-0009, gate G-0
 
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import Literal
 
 from pydantic import Field, model_validator
@@ -51,6 +52,27 @@ class Settings(BaseSettings):
     soffice_path: str | None = None
     # Gate G-04 has nothing to do with this: no model is involved in ingest.
 
+    # ---- AI layer (ADR-0008 backend + residency, ADR-0014 pricing, ADR-0010 budget) ----
+    # `anthropic` (default, ZDR + inference_geo pinned) · `vertex_eu` (EU inference,
+    # Google as processor) · `fake` (tests/dev without a key — refused outside dev/test).
+    llm_backend: Literal["anthropic", "vertex_eu", "fake"] = "anthropic"
+    anthropic_api_key: str | None = None
+    llm_inference_geo: str = "us"  # ADR-0008 afklaring 2: a documented answer to "where?"
+    vertex_project_id: str | None = None
+    vertex_region: str = "europe-west1"
+    llm_timeout_seconds: float = 180
+    dkk_per_usd: Decimal = Decimal("6.90")  # stored on every usage row (ADR-0014 §2)
+    llm_daily_budget_dkk: Decimal = Decimal("500")  # per org, hard stop (ADR-0010 §7)
+
+    # Background jobs: sync (test) · thread (dev, no Redis) · rq (staging/prod).
+    jobs_mode: Literal["sync", "thread", "rq"] | None = None
+
+    @property
+    def jobs_mode_effective(self) -> str:
+        if self.jobs_mode is not None:
+            return self.jobs_mode
+        return {"test": "sync", "dev": "thread"}.get(self.app_env, "rq")
+
     @property
     def ingest_runs_inline(self) -> bool:
         if self.ingest_sync is not None:
@@ -63,6 +85,8 @@ class Settings(BaseSettings):
             raise ValueError("SECRET_KEY must be set outside dev/test (ADR-0024)")
         if self.app_env in ("staging", "prod") and self.storage_backend == "local":
             raise ValueError("STORAGE_BACKEND=local is dev-only (ADR-0007 §3, bidflow 0083)")
+        if self.app_env in ("staging", "prod") and self.llm_backend == "fake":
+            raise ValueError("LLM_BACKEND=fake is dev/test-only (ADR-0008)")
         return self
 
 

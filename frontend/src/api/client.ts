@@ -79,11 +79,93 @@ export type Contract = {
   manager_id: string | null;
   start_date: string | null;
   end_date: string | null;
+  description: string | null;
+  notice_period_days: number | null;
+  last_termination_date: string | null;
+  options: { beskrivelse?: string; maaneder?: number | null }[];
+  price_regulation: string | null;
+  price_regulation_date: string | null;
   total_value: string | null;
   annual_value: string | null;
 };
 
 export type ContractList = { items: Contract[]; total: number };
+
+// ---- AI (ADR-0004/0005/0010/0011) ----------------------------------------------
+
+export type Citation = {
+  kind: "document";
+  document_id: string;
+  document_version_id: string | null;
+  page_pdf: number | null;
+  page_printed: string | null;
+  clause_ref: string | null;
+  quote: string;
+  verified: boolean;
+  label: string;
+};
+
+export type SuggestedField = { value: string; citation: Citation | null; verified: boolean };
+
+export type IntakePayload = {
+  fields: Record<string, SuggestedField>;
+  options: { description: string; months: number | null; citation: Citation | null; verified: boolean }[];
+  before: Record<string, unknown>;
+  model_confidence: string;
+};
+
+export type Suggestion = {
+  id: string;
+  contract_id: string;
+  agent_key: string;
+  agent_run_id: string | null;
+  kind: "create" | "update";
+  subject_kind: string;
+  subject_id: string | null;
+  payload: IntakePayload;
+  confidence: "hoej" | "mellem" | "lav";
+  rationale: string;
+  citations: Citation[];
+  amount_dkk: string | null;
+  status: "foreslaaet" | "afventer_2_signatur" | "godkendt" | "afvist" | "foraeldet";
+  decided_by: string | null;
+  decided_at: string | null;
+  decision_comment: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AgentRun = {
+  id: string;
+  agent_key: string;
+  contract_id: string | null;
+  trigger: "schedule" | "event" | "manual";
+  status: "koerer" | "ok" | "fejlet" | "sprunget_over";
+  started_at: string;
+  finished_at: string | null;
+  duration_ms: number | null;
+  suggestions_created: number;
+  suggestions_updated: number;
+  task: string | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  cost_dkk: string | null;
+  error: string | null;
+};
+
+export type AuditEntry = {
+  id: string;
+  occurred_at: string;
+  actor_type: "human" | "agent" | "system";
+  actor_label: string;
+  actor_role: string | null;
+  action: string;
+  object_kind: string;
+  object_id: string | null;
+  object_label: string;
+  contract_id: string | null;
+  details: Record<string, unknown>;
+};
 
 // ---- documents (ADR-0005/0006) ----------------------------------------------
 

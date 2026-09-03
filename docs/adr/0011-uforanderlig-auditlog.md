@@ -183,3 +183,15 @@ fravalgt.
    præcis det, en revision spørger til.
 3. **Hash-kolonnerne (`prev_hash`, `row_hash`) fyldes fra dag 1**, selv om
    verifikationsværktøjet udskydes — kæden kan ikke påføres bagud.
+
+## Implementeringsnote (2026-09-04, første increment)
+
+`audit_log` er oprettet med §2's kolonner, enum-taksonomien fra §3 (første 14
+handlinger) og §1's rettigheder: app- og worker-rollen har `INSERT` + `SELECT`, og en
+test bekræfter, at `UPDATE`/`DELETE` afvises af Postgres. `prev_hash`/`row_hash`
+fyldes fra første række (§6; verifikationsværktøjet er ikke bygget). Skrivning sker
+gennem `app/core/audit.py` med frosne labels og tre aktørtyper. Første skrivende
+handlinger: `ai_query`, `ai_suggestion_created/approved/rejected/expired`,
+`agent_run_completed/failed`, `contract_updated`, `contract_status_changed`.
+Login, dokumentupload og versionsskift logges endnu ikke — de kobles på i næste
+increment sammen med auditskærmen; `GET /api/contracts/{id}/audit` findes bag `audit`.

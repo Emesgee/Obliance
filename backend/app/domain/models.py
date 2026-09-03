@@ -449,3 +449,264 @@ class DocumentClause(Base):
     page_pdf: Mapped[int] = mapped_column(Integer, nullable=False)
     char_start: Mapped[int] = mapped_column(Integer, nullable=False)
     char_end: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+# ---- AI layer (migration 0004: ADR-0004, 0010, 0011, 0014) ------------------------------
+
+
+class ActorType(enum.StrEnum):
+    human = "human"
+    agent = "agent"
+    system = "system"
+
+
+class AuditAction(enum.StrEnum):
+    """Closed taxonomy (ADR-0011 §3). A new action is a migration, on purpose."""
+
+    login = "login"
+    login_failed = "login_failed"
+    contract_created = "contract_created"
+    contract_updated = "contract_updated"
+    contract_status_changed = "contract_status_changed"
+    document_uploaded = "document_uploaded"
+    document_version_made_current = "document_version_made_current"
+    ai_suggestion_created = "ai_suggestion_created"
+    ai_suggestion_approved = "ai_suggestion_approved"
+    ai_suggestion_rejected = "ai_suggestion_rejected"
+    ai_suggestion_expired = "ai_suggestion_expired"
+    ai_query = "ai_query"
+    agent_run_completed = "agent_run_completed"
+    agent_run_failed = "agent_run_failed"
+
+
+class SuggestionKind(enum.StrEnum):
+    create = "create"
+    update = "update"
+
+
+class SuggestionSubject(enum.StrEnum):
+    obligation = "obligation"
+    risk = "risk"
+    raci_entry = "raci_entry"
+    invoice_finding = "invoice_finding"
+    contract_intake = "contract_intake"
+    sla_breach = "sla_breach"
+    task = "task"
+
+
+class SuggestionStatus(enum.StrEnum):
+    foreslaaet = "foreslaaet"
+    afventer_2_signatur = "afventer_2_signatur"
+    godkendt = "godkendt"
+    afvist = "afvist"
+    foraeldet = "foraeldet"
+
+
+OPEN_SUGGESTION_STATUSES = (SuggestionStatus.foreslaaet, SuggestionStatus.afventer_2_signatur)
+
+
+class Confidence(enum.StrEnum):
+    hoej = "hoej"
+    mellem = "mellem"
+    lav = "lav"
+
+
+class AgentRunStatus(enum.StrEnum):
+    koerer = "koerer"
+    ok = "ok"
+    fejlet = "fejlet"
+    sprunget_over = "sprunget_over"
+
+
+class AgentTrigger(enum.StrEnum):
+    schedule = "schedule"
+    event = "event"
+    manual = "manual"
+
+
+class AuditLog(Base):
+    """Append-only (grant-enforced). Labels are frozen at write time — ADR-0011 §2."""
+
+    __tablename__ = "audit_log"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    )
+    occurred_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
+    actor_type: Mapped[ActorType] = mapped_column(_pg_enum(ActorType, "actor_type"), nullable=False)
+    actor_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    actor_label: Mapped[str] = mapped_column(Text, nullable=False)
+    actor_role: Mapped[str | None] = mapped_column(Text)
+    action: Mapped[AuditAction] = mapped_column(
+        _pg_enum(AuditAction, "audit_action"), nullable=False
+    )
+    object_kind: Mapped[str] = mapped_column(Text, nullable=False)
+    object_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    object_label: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
+    contract_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("contracts.id", ondelete="RESTRICT")
+    )
+    details: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+    request_id: Mapped[str | None] = mapped_column(Text)
+    agent_run_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    prev_hash: Mapped[str | None] = mapped_column(Text)
+    row_hash: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class AgentRun(Base):
+    __tablename__ = "agent_runs"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    )
+    agent_key: Mapped[str] = mapped_column(Text, nullable=False)
+    contract_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("contracts.id", ondelete="RESTRICT")
+    )
+    trigger: Mapped[AgentTrigger] = mapped_column(
+        _pg_enum(AgentTrigger, "agent_trigger"), nullable=False
+    )
+    trigger_ref: Mapped[str | None] = mapped_column(Text)
+    triggered_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("profiles.id", ondelete="SET NULL")
+    )
+    status: Mapped[AgentRunStatus] = mapped_column(
+        _pg_enum(AgentRunStatus, "agent_run_status"),
+        nullable=False,
+        server_default=AgentRunStatus.koerer.value,
+    )
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    duration_ms: Mapped[int | None] = mapped_column(Integer)
+    contracts_scanned: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    suggestions_created: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    suggestions_updated: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    model: Mapped[str | None] = mapped_column(Text)
+    task: Mapped[str | None] = mapped_column(Text)
+    input_tokens: Mapped[int | None] = mapped_column(Integer)
+    output_tokens: Mapped[int | None] = mapped_column(Integer)
+    cost_dkk: Mapped[Decimal | None] = mapped_column(Numeric(12, 4))
+    batch_id: Mapped[str | None] = mapped_column(Text)
+    error: Mapped[str | None] = mapped_column(Text)
+    error_context: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+
+
+class AiSuggestion(Base):
+    """The only table an agent writes proposals to (ADR-0004 §1)."""
+
+    __tablename__ = "ai_suggestions"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    )
+    contract_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("contracts.id", ondelete="RESTRICT"), nullable=False
+    )
+    agent_key: Mapped[str] = mapped_column(Text, nullable=False)
+    agent_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("agent_runs.id", ondelete="SET NULL")
+    )
+    kind: Mapped[SuggestionKind] = mapped_column(
+        _pg_enum(SuggestionKind, "suggestion_kind"), nullable=False
+    )
+    subject_kind: Mapped[SuggestionSubject] = mapped_column(
+        _pg_enum(SuggestionSubject, "suggestion_subject"), nullable=False
+    )
+    subject_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    confidence: Mapped[Confidence] = mapped_column(
+        _pg_enum(Confidence, "confidence"), nullable=False
+    )
+    rationale: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
+    citations: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'[]'::jsonb")
+    )
+    amount_dkk: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
+    fingerprint: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[SuggestionStatus] = mapped_column(
+        _pg_enum(SuggestionStatus, "suggestion_status"),
+        nullable=False,
+        server_default=SuggestionStatus.foreslaaet.value,
+    )
+    decided_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("profiles.id", ondelete="SET NULL")
+    )
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    decision_comment: Mapped[str | None] = mapped_column(Text)
+    materialized_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
+
+
+class UsageEvent(Base):
+    """One row per operation, price frozen at write time (ADR-0014)."""
+
+    __tablename__ = "usage_events"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    )
+    occurred_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
+    task: Mapped[str] = mapped_column(Text, nullable=False)
+    actor_type: Mapped[ActorType] = mapped_column(_pg_enum(ActorType, "actor_type"), nullable=False)
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("profiles.id", ondelete="SET NULL")
+    )
+    contract_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("contracts.id", ondelete="RESTRICT")
+    )
+    agent_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("agent_runs.id", ondelete="SET NULL")
+    )
+    model: Mapped[str] = mapped_column(Text, nullable=False)
+    backend: Mapped[str] = mapped_column(Text, nullable=False)
+    input_tokens: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    output_tokens: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    cache_read_tokens: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    cache_write_tokens: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    batch: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    inference_geo: Mapped[str | None] = mapped_column(Text)
+    cost_usd: Mapped[Decimal | None] = mapped_column(Numeric(12, 6))
+    cost_dkk: Mapped[Decimal | None] = mapped_column(Numeric(12, 4))
+    dkk_per_usd: Mapped[Decimal | None] = mapped_column(Numeric(8, 4))
+
+
+class AgentSetting(Base):
+    __tablename__ = "agent_settings"
+    __table_args__ = (PrimaryKeyConstraint("organization_id", "agent_key"),)
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT")
+    )
+    agent_key: Mapped[str] = mapped_column(Text)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
+    schedule_override: Mapped[str | None] = mapped_column(Text)
+    paused_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("profiles.id", ondelete="SET NULL")
+    )
+    paused_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    paused_reason: Mapped[str | None] = mapped_column(Text)

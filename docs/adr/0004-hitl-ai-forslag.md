@@ -210,3 +210,15 @@ tabellen i §1.
    udfyldning.
 3. **Ubesluttede forslag over 14 dage eskaleres som notifikation** (N12) til
    kontraktens ejer. Status forbliver `foreslaaet`.
+
+## Implementeringsnote (2026-09-04, første increment)
+
+Bygget i migration `0004_ai_layer` og `backend/app/ai/suggestions.py`: tabellen fra §1
+(partielt unikt indeks på `fingerprint` for åbne forslag, så en genkørsel opdaterer
+og aldrig duplikerer), tilstandsmaskinen fra §2 (`approve` kræver `hitl` + subject-
+tilladelsen; `reject` afviser uden begrundelse; `expire_for_version` sættes kun af
+systemet ved versionsskift), materialisering pr. `subject_kind` (§3) som registrering
+i `MATERIALIZERS` — den første er `contract_intake` i `app/agents/contract_intake.py`
+med fyld-kun-merge og `kladde → aktiv` (afklaring 2). Endnu ikke bygget: beløbsgrænser
+og `afventer_2_signatur` (approve afviser pengeforslag indtil ADR-0003's flow findes),
+bulk-godkendelse (afklaring 1) og 14-dages-eskalering (afklaring 3, venter på ADR-0017).

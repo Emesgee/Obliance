@@ -163,11 +163,16 @@ def make_current(session: Session, *, version_id: uuid.UUID, actor: uuid.UUID) -
     if doc is not None:
         doc.current_version_id = version.id
     session.flush()
-    events.emit(
+    # Delivered after commit: listeners (ADR-0004 expiry, the intake agent) open
+    # their own transactions and must see the switch.
+    events.emit_after_commit(
+        session,
         events.DOCUMENT_VERSION_CHANGED,
+        organization_id=version.organization_id,
         contract_id=version.contract_id,
         document_id=version.document_id,
         old_version_id=old.id if old else None,
         new_version_id=version.id,
+        doc_type=doc.doc_type if doc is not None else DocType.andet,
     )
     return version

@@ -132,3 +132,12 @@ Et tredje diagram ville gentegne de to, der allerede findes. Vurderet og fravalg
    gennemsigtighedsløftet og gør en samtale om prisplaner konkret.
 3. **Rækker ældre end 12 måneder aggregeres** til månedssummer pr. (org, opgave, model).
    Detaljen er værdiløs efter et år; summen er ikke.
+
+## Implementeringsnote (2026-09-04, første increment)
+
+`usage_events` skrives af `app/llm/usage.py` for hvert kald med tokens, cache-tal,
+`inference_geo`, `cost_usd` og `cost_dkk` beregnet ved skrivning med `DKK_PER_USD`
+gemt på rækken (§2) — best-effort (§3). Ukendt model giver `cost_usd = null` frem for
+en fejl. Døgnbudgettet (ADR-0010 §7) læser summen af rækkerne. Én række pr. operation
+er i dag lig med én række pr. kald, fordi intake er ét kald; aggregeringen pr.
+operation kommer med batch. Viewet i Administration er ikke bygget endnu.

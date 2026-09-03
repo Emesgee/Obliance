@@ -236,3 +236,15 @@ flowchart TB
    Administration. Et loft, man kan ramme uden at opdage det, er ikke et loft.
 3. **Manuel "kør agenten nu" bygges**, bag `agenter`-tilladelsen, med samme lås og samme
    `agent_runs`-række (`trigger = manual`).
+
+## Implementeringsnote (2026-09-04, første increment)
+
+`agent_runs` og `agent_settings` er oprettet (migration 0004). Contract Intake Agent
+kører hændelsesdrevet på `document_version_changed` for aftalegrundlags-dokumenter
+og manuelt via `POST /api/contracts/{id}/agents/contract_intake/run` bag `agenter`
+(afklaring 3); begge skriver en `agent_runs`-række (`event`/`manual`), også ved
+`sprunget_over` (intet aftalegrundlag, agent slået fra, døgnbudget ramt). Kørslen
+er isoleret i `app/core/jobs.py`: `sync` i test, `thread` i dev (ingen Redis på
+udviklingsmaskinen), `rq` i staging/prod — sidstnævnte fejler højlydt, indtil
+scheduler og worker-container er bygget. Natlige kørsler, advisory lock, batch,
+retry og alarmering venter på det.

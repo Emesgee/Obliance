@@ -6,18 +6,21 @@ import {
   api,
   apiBlob,
   ApiError,
+  type AgentRun,
+  type Citation,
   type Clause,
   type Contract,
   type ContractDocument,
   type DocumentVersion,
   type Page,
+  type Suggestion,
 } from "../api/client";
 import { useAuth } from "../auth";
 
-// Contract detail (ADR-0006 in the UI): documents with their immutable versions,
-// upload of a new document or a new version, and the one human act — "Gør
-// gældende". Page text is shown as extracted (ADR-0005: the page is derived,
-// the citation is the truth) so a reader can check what the system will cite.
+// Contract detail: master data, documents with immutable versions (ADR-0006),
+// and the HITL queue (ADR-0004) — the Contract Intake Agent's proposal is shown
+// next to the current values with its citations (ADR-0005); a human approves or
+// rejects with a reason. Nothing here writes the register except that verdict.
 
 const DOC_TYPES: [string, string][] = [
   ["hovedkontrakt", "Hovedkontrakt"],
@@ -32,6 +35,17 @@ const DOC_TYPES: [string, string][] = [
 
 const ACCEPT = ".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx";
 const dkDate = new Intl.DateTimeFormat("da-DK", { dateStyle: "medium", timeStyle: "short" });
+const dkDay = new Intl.DateTimeFormat("da-DK", { dateStyle: "medium" });
+const dkk = new Intl.NumberFormat("da-DK", { style: "currency", currency: "DKK", minimumFractionDigits: 2 });
+
+function fmtDay(s: string | null | undefined): string {
+  return s ? dkDay.format(new Date(s)) : "—";
+}
+
+function Amount({ value }: { value: string | null }) {
+  if (value === null) return <span className="text-muted">—</span>;
+  return <span className="font-mono tabular-nums">{dkk.format(Number(value))}</span>;
+}
 
 function StatusPill({ status }: { status: DocumentVersion["status"] }) {
   const cls =
@@ -39,6 +53,255 @@ function StatusPill({ status }: { status: DocumentVersion["status"] }) {
   const label = status === "gaeldende" ? "Gældende" : status === "kladde" ? "Kladde" : "Historisk";
   return <span className={`pill ${cls}`}>{label}</span>;
 }
+
+// ---- master data ----------------------------------------------------------------------------
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <div className="text-xs font-semibold uppercase tracking-wider text-muted">{label}</div>
+      <div className="text-sm">{children}</div>
+    </div>
+  );
+}
+
+function MasterData({ c }: { c: Contract }) {
+  return (
+    <section className="mb-6 grid grid-cols-2 gap-x-6 gap-y-3 rounded-cc border border-line bg-card p-4 sm:grid-cols-4">
+      <Field label="Status">
+        <span className={`pill ${c.status === "kladde" ? "bg-warn-bg text-warn" : "bg-ok-bg text-ok"}`}>{c.status}</span>
+      </Field>
+      <Field label="Aftaleform">{c.agreement_form ?? "—"}</Field>
+      <Field label="Kontraktnummer"><span className="font-mono">{c.contract_number ?? "—"}</span></Field>
+      <Field label="Kategori">{c.category ?? "—"}</Field>
+      <Field label="Ikrafttræden">{fmtDay(c.start_date)}</Field>
+      <Field label="Udløb">{fmtDay(c.end_date)}</Field>
+      <Field label="Opsigelsesvarsel">{c.notice_period_days !== null ? `${Math.round(c.notice_period_days / 30)} mdr.` : "—"}</Field>
+      <Field label="Sidste opsigelsesdato">{fmtDay(c.last_termination_date)}</Field>
+      <Field label="Samlet værdi"><Amount value={c.total_value} /></Field>
+      <Field label="Årlig værdi"><Amount value={c.annual_value} /></Field>
+      <Field label="Prisregulering">{c.price_regulation ?? "—"}</Field>
+      <Field label="Optioner">
+        {c.options.length === 0 ? "—" : c.options.map((o, i) => <div key={i}>{o.beskrivelse}{o.maaneder ? ` (${o.maaneder} mdr.)` : ""}</div>)}
+      </Field>
+      {c.description && <div className="col-span-2 sm:col-span-4"><Field label="Beskrivelse">{c.description}</Field></div>}
+    </section>
+  );
+}
+
+// ---- HITL: suggestions (ADR-0004) ---------------------------------------------------------------
+
+const FIELD_LABELS: Record<string, string> = {
+  name: "Navn",
+  contract_number: "Kontraktnummer",
+  agreement_form: "Aftaleform",
+  category: "Kategori",
+  description: "Beskrivelse",
+  start_date: "Ikrafttræden",
+  end_date: "Udløb",
+  notice_period_months: "Opsigelsesvarsel (mdr.)",
+  last_termination_date: "Sidste opsigelsesdato",
+  price_regulation: "Prisregulering",
+  total_value_dkk: "Samlet værdi (DKK)",
+  annual_value_dkk: "Årlig værdi (DKK)",
+};
+
+function currentValue(c: Contract, field: string): string | null {
+  switch (field) {
+    case "notice_period_months":
+      return c.notice_period_days !== null ? String(Math.round(c.notice_period_days / 30)) : null;
+    case "total_value_dkk":
+      return c.total_value;
+    case "annual_value_dkk":
+      return c.annual_value;
+    default: {
+      const v = (c as unknown as Record<string, unknown>)[field];
+      return v === null || v === undefined ? null : String(v);
+    }
+  }
+}
+
+function ConfidencePill({ value }: { value: Suggestion["confidence"] }) {
+  const cls = value === "hoej" ? "bg-ok-bg text-ok" : value === "mellem" ? "bg-warn-bg text-warn" : "bg-crit-bg text-crit";
+  const label = value === "hoej" ? "Høj" : value === "mellem" ? "Mellem" : "Lav";
+  return <span className={`pill ${cls}`}>Sikkerhed: {label}</span>;
+}
+
+function CitationChip({ c }: { c: Citation | null }) {
+  if (!c) return <span className="text-xs text-muted">ingen kilde</span>;
+  return (
+    <span title={c.quote} className={`inline-block rounded-cc-sm border px-2 py-0.5 text-xs ${c.verified ? "border-line bg-bg" : "border-warn bg-warn-bg text-warn"}`}>
+      {c.label}{!c.verified && " · citat ikke fundet"}
+    </span>
+  );
+}
+
+function SuggestionCard({ s, contract }: { s: Suggestion; contract: Contract }) {
+  const { can } = useAuth();
+  const qc = useQueryClient();
+  const [comment, setComment] = useState("");
+  const [rejecting, setRejecting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = () => {
+    void qc.invalidateQueries({ queryKey: ["suggestions", contract.id] });
+    void qc.invalidateQueries({ queryKey: ["contract", contract.id] });
+  };
+  const approve = useMutation({
+    mutationFn: () => api<Suggestion>(`/api/suggestions/${s.id}/approve`, { method: "POST", body: JSON.stringify({ comment: comment || null }) }),
+    onSuccess: refresh,
+    onError: (e) => setError(e instanceof ApiError ? e.message : "Kunne ikke godkende."),
+  });
+  const reject = useMutation({
+    mutationFn: () => api<Suggestion>(`/api/suggestions/${s.id}/reject`, { method: "POST", body: JSON.stringify({ comment }) }),
+    onSuccess: refresh,
+    onError: (e) => setError(e instanceof ApiError ? e.message : "Kunne ikke afvise."),
+  });
+
+  const open = s.status === "foreslaaet" || s.status === "afventer_2_signatur";
+  const fields = Object.entries(s.payload.fields ?? {});
+  const decided = !open && (
+    <p className="text-sm text-muted">
+      {s.status === "godkendt" ? "Godkendt" : s.status === "afvist" ? "Afvist" : "Forældet"}
+      {s.decided_at ? ` · ${dkDate.format(new Date(s.decided_at))}` : ""}
+      {s.decision_comment ? ` · ${s.decision_comment}` : ""}
+    </p>
+  );
+
+  return (
+    <article className={`mb-4 rounded-cc border p-4 ${open ? "border-accent bg-card" : "border-line bg-card opacity-80"}`}>
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <span className="pill bg-blue-bg text-accent">AI-forslag</span>
+        <span className="font-semibold">Contract Intake Agent</span>
+        <ConfidencePill value={s.confidence} />
+        <span className="ml-auto text-xs text-muted">{dkDate.format(new Date(s.created_at))}</span>
+      </div>
+      {s.rationale && <p className="mb-3 text-sm text-slate">{s.rationale}</p>}
+      {decided}
+      {open && (
+        <>
+          <table className="mb-3 w-full text-sm">
+            <thead>
+              <tr className="border-b border-line text-left text-xs uppercase tracking-wider text-muted">
+                <th className="py-2 pr-3">Felt</th><th className="py-2 pr-3">Nuværende</th><th className="py-2 pr-3">Foreslået</th><th className="py-2">Kilde</th>
+              </tr>
+            </thead>
+            <tbody>
+              {fields.map(([name, f]) => {
+                const cur = currentValue(contract, name);
+                const kept = cur !== null && cur !== "";
+                return (
+                  <tr key={name} className="border-b border-line last:border-0 align-top">
+                    <td className="py-2 pr-3 font-medium">{FIELD_LABELS[name] ?? name}</td>
+                    <td className="py-2 pr-3 text-muted">{cur ?? "—"}{kept && <span className="ml-1 text-xs">(beholdes)</span>}</td>
+                    <td className={`py-2 pr-3 ${kept ? "text-muted line-through" : ""}`}>{f.value}</td>
+                    <td className="py-2"><CitationChip c={f.citation} /></td>
+                  </tr>
+                );
+              })}
+              {(s.payload.options ?? []).map((o, i) => (
+                <tr key={`opt-${i}`} className="border-b border-line last:border-0 align-top">
+                  <td className="py-2 pr-3 font-medium">Option</td>
+                  <td className="py-2 pr-3 text-muted">{contract.options.length ? "(beholdes)" : "—"}</td>
+                  <td className="py-2 pr-3">{o.description}{o.months ? ` (${o.months} mdr.)` : ""}</td>
+                  <td className="py-2"><CitationChip c={o.citation} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {can("hitl") && can("kontrakt_red") ? (
+            <div className="flex flex-wrap items-start gap-2">
+              <textarea
+                value={comment}
+                onChange={(e) => setComment(e.target.value)}
+                placeholder={rejecting ? "Begrundelse (påkrævet ved afvisning)" : "Kommentar (valgfri)"}
+                className="min-h-[2.5rem] flex-1 rounded-cc-sm border border-line px-3 py-2 text-sm"
+              />
+              {!rejecting ? (
+                <>
+                  <button onClick={() => approve.mutate()} disabled={approve.isPending} className="rounded-cc-sm bg-accent px-4 py-2 text-sm font-semibold text-card disabled:opacity-60">
+                    Godkend
+                  </button>
+                  <button onClick={() => setRejecting(true)} className="rounded-cc-sm border border-line px-4 py-2 text-sm">Afvis …</button>
+                </>
+              ) : (
+                <>
+                  <button onClick={() => reject.mutate()} disabled={reject.isPending || comment.trim().length < 3} className="rounded-cc-sm bg-crit px-4 py-2 text-sm font-semibold text-card disabled:opacity-60">
+                    Afvis med begrundelse
+                  </button>
+                  <button onClick={() => setRejecting(false)} className="rounded-cc-sm border border-line px-4 py-2 text-sm">Fortryd</button>
+                </>
+              )}
+            </div>
+          ) : (
+            <p className="text-xs text-muted">Godkendelse kræver tilladelserne hitl og kontrakt_red.</p>
+          )}
+          {error && <p role="alert" className="mt-2 rounded-cc-sm bg-crit-bg px-3 py-2 text-sm text-crit">{error}</p>}
+        </>
+      )}
+    </article>
+  );
+}
+
+function runLabel(r: AgentRun): string {
+  const when = dkDate.format(new Date(r.started_at));
+  switch (r.status) {
+    case "koerer": return `Contract Intake Agent læser dokumenterne … (startet ${when})`;
+    case "ok": return `Sidst kørt ${when} · ${r.suggestions_created + r.suggestions_updated} forslag`;
+    case "fejlet": return `Fejlede ${when}: ${r.error ?? "ukendt fejl"}`;
+    default: return `Sprunget over ${when}${r.error ? `: ${r.error}` : ""}`;
+  }
+}
+
+function AiSection({ contract }: { contract: Contract }) {
+  const { can } = useAuth();
+  const qc = useQueryClient();
+  const runs = useQuery({
+    queryKey: ["agent-runs", contract.id],
+    queryFn: () => api<AgentRun[]>(`/api/contracts/${contract.id}/agent-runs`),
+    refetchInterval: (q) => (q.state.data?.some((r) => r.status === "koerer") ? 2000 : false),
+  });
+  const running = runs.data?.some((r) => r.status === "koerer") ?? false;
+  const suggestions = useQuery({
+    queryKey: ["suggestions", contract.id],
+    queryFn: () => api<Suggestion[]>(`/api/contracts/${contract.id}/suggestions`),
+    refetchInterval: running ? 2000 : false,
+  });
+  const run = useMutation({
+    mutationFn: () => api<{ status: string }>(`/api/contracts/${contract.id}/agents/contract_intake/run`, { method: "POST" }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["agent-runs", contract.id] });
+      void qc.invalidateQueries({ queryKey: ["suggestions", contract.id] });
+    },
+  });
+  const latest = runs.data?.[0];
+
+  return (
+    <section className="mb-6">
+      <div className="mb-2 flex items-center justify-between">
+        <h2 className="text-lg font-semibold">AI-forslag</h2>
+        {can("agenter") && (
+          <button onClick={() => run.mutate()} disabled={run.isPending || running} className="rounded-cc-sm border border-line px-3 py-1 text-sm disabled:opacity-60">
+            Kør Contract Intake Agent
+          </button>
+        )}
+      </div>
+      {latest && (
+        <p className={`mb-3 text-sm ${latest.status === "fejlet" ? "text-crit" : latest.status === "koerer" ? "text-accent" : "text-muted"}`}>
+          {runLabel(latest)}
+        </p>
+      )}
+      {suggestions.data && suggestions.data.length === 0 && !latest && (
+        <p className="rounded-cc border border-line bg-card p-4 text-sm text-slate">
+          Ingen forslag endnu. Upload en hovedkontrakt, så læser Contract Intake Agent den.
+        </p>
+      )}
+      {suggestions.data?.map((s) => <SuggestionCard key={s.id} s={s} contract={contract} />)}
+    </section>
+  );
+}
+
+// ---- documents (ADR-0006) ---------------------------------------------------------------------
 
 function UploadForm({ contractId, documentId, onDone }: { contractId: string; documentId?: string; onDone: () => void }) {
   const qc = useQueryClient();
@@ -57,6 +320,7 @@ function UploadForm({ contractId, documentId, onDone }: { contractId: string; do
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["documents", contractId] });
+      void qc.invalidateQueries({ queryKey: ["agent-runs", contractId] });
       onDone();
     },
     onError: (e) => setError(e instanceof ApiError ? e.message : "Upload mislykkedes."),
@@ -162,12 +426,16 @@ function DocumentCard({ doc, contractId }: { doc: ContractDocument; contractId: 
   const { can } = useAuth();
   const qc = useQueryClient();
   const [addingVersion, setAddingVersion] = useState(false);
-  const [viewing, setViewing] = useState<string | null>(doc.current_version_id);
+  const [viewing, setViewing] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const makeCurrent = useMutation({
     mutationFn: (versionId: string) => api<DocumentVersion>(`/api/documents/versions/${versionId}/make-current`, { method: "POST" }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ["documents", contractId] }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["documents", contractId] });
+      void qc.invalidateQueries({ queryKey: ["agent-runs", contractId] });
+      void qc.invalidateQueries({ queryKey: ["suggestions", contractId] });
+    },
     onError: (e) => setError(e instanceof ApiError ? e.message : "Kunne ikke gøre versionen gældende."),
   });
 
@@ -209,7 +477,7 @@ function DocumentCard({ doc, contractId }: { doc: ContractDocument; contractId: 
               <td className="py-2 pr-3 font-mono">{v.page_count ?? "—"}</td>
               <td className="py-2 pr-3 text-muted">{dkDate.format(new Date(v.uploaded_at))}</td>
               <td className="whitespace-nowrap py-2 text-right">
-                <button onClick={() => setViewing(v.id)} className="mr-2 text-xs text-accent underline">{viewing === v.id ? "Vises" : "Vis"}</button>
+                <button onClick={() => setViewing(viewing === v.id ? null : v.id)} className="mr-2 text-xs text-accent underline">{viewing === v.id ? "Skjul" : "Vis"}</button>
                 {can("kontrakt_red") && v.status !== "gaeldende" && v.ingest_status === "ok" && (
                   <button onClick={() => makeCurrent.mutate(v.id)} disabled={makeCurrent.isPending} className="rounded-cc-sm bg-accent px-2 py-1 text-xs font-semibold text-card disabled:opacity-60">
                     Gør gældende
@@ -224,6 +492,8 @@ function DocumentCard({ doc, contractId }: { doc: ContractDocument; contractId: 
     </article>
   );
 }
+
+// ---- page -----------------------------------------------------------------------------------
 
 export default function ContractDetail() {
   const { id = "" } = useParams();
@@ -241,11 +511,14 @@ export default function ContractDetail() {
   return (
     <section>
       <p className="mb-2 text-sm"><Link to="/" className="text-accent underline">← Kontrakter</Link></p>
-      <div className="mb-6 flex items-baseline gap-3">
+      <div className="mb-4 flex flex-wrap items-baseline gap-3">
         <h1 className="text-2xl font-bold tracking-tight">{c.name}</h1>
         <span className="font-mono text-sm text-muted">{c.reference}</span>
         <span className={`pill ${c.confidentiality === "fortrolig" ? "bg-warn-bg text-warn" : "bg-none-bg text-none"}`}>{c.confidentiality}</span>
       </div>
+
+      <MasterData c={c} />
+      <AiSection contract={c} />
 
       <div className="mb-4 flex items-center justify-between">
         <h2 className="text-lg font-semibold">Dokumenter</h2>

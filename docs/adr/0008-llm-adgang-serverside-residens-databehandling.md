@@ -240,3 +240,17 @@ sequenceDiagram
 > egen DPO og sikkerhedsgennemgang. Bekræft dem med juridisk rådgiver og med kunden,
 > før DPA'en underskrives. Falder EU-inferens ud som et hårdt krav, er `vertex_eu`
 > bygget og klar — det er præcis derfor, den er en del af beslutningen og ikke et TODO.
+
+## Implementeringsnote (2026-09-04, første increment)
+
+`backend/app/llm/` er bygget som §1/§2 foreskriver: `run(session, task, …)` er eneste
+indgang; den kræver tenant-kontekst, tjekker døgnbudgettet (ADR-0010 §7), skriver
+auditposten `ai_query` og committer den *før* kaldet, pakker dokumenttekst som data
+(ADR-0016 §1), tjekker `stop_reason` (inkl. `refusal`) og validerer svaret mod opgavens
+pydantic-skema via strukturerede outputs (`output_config.format`). `usage_events`
+skrives pr. kald med `inference_geo` fra svaret (afklaring 2). Backends: `anthropic`
+(default, `inference_geo` pinnet til `us`) og `vertex_eu` deler adapter og testsuite;
+`fake` findes til test og til en udviklingsmaskine uden nøgle og nægtes i
+staging/prod. Nøglen læses kun fra `ANTHROPIC_API_KEY` i serverens miljø. ZDR-aftalen
+og overførselsgrundlaget (afklaring 3) er fortsat project owners blokerende opgave før
+første kundedata.

@@ -42,6 +42,8 @@ os.environ.setdefault("SECRET_KEY", "test-secret-not-for-anything-else-012345678
 os.environ.setdefault("RATELIMIT_LOGIN", "1000 per minute")
 # Documents (ADR-0006): uploads land in a throwaway directory, never in the repo.
 os.environ.setdefault("STORAGE_ROOT", tempfile.mkdtemp(prefix="obliance-storage-"))
+# AI (ADR-0008): no provider is ever called from the suite; tests script a FakeProvider.
+os.environ.setdefault("LLM_BACKEND", "fake")
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 

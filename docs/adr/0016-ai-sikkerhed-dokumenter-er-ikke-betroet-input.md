@@ -191,3 +191,13 @@ flowchart TB
 3. **Tre flag på tre forskellige dokumenter fra samme leverandør** udløser en
    notifikation til Legal & Compliance (ADR-0017). Det er et mønster, ikke en
    tilfældighed.
+
+## Implementeringsnote (2026-09-04, første increment)
+
+§1 er bygget i `app/llm/context.py`: al dokumenttekst og alle titler pakkes i én
+escaped `<materiale>`-blok, adskilt fra instruktionerne; regel 6 er ét lag i
+systemprompten. §2's garantier gælder for Contract Intake Agent (kun forslag,
+skema-valideret, citater lokaliseret i `app/ai/citations.py`, uverificeret kilde
+capper til `lav`). Ingest-skanneren (§3), output-sanitisering i copiloten (§4) og
+modstander-korpusset (§6) er ikke bygget endnu; testene dækker foreløbig, at
+materiale ikke kan lukke sin egen tag og aldrig havner i instruktionsteksten.
