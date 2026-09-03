@@ -112,6 +112,12 @@ tilføjer kun *hvordan* konteksten opstår, og det er tre dependencies i én lig
 - **Signup-endpoint.** Afvist: produktet har ingen selvoprettelse (mockuppen: "SSO via
   organisationens identitetsløsning"); bootstrap + invitationer er vejen.
 
+## Afklaringer (2026-09-03, besluttet af project owner)
+
+- **MFA udskydes.** Increment 2's MFA bygges ikke nu; produktet forbliver en
+  pilot-/dev-stak, og gaten "ingen kunde-login før MFA" står uændret. Beslutningen er
+  bevidst, ikke en forglemmelse — den skal genåbnes, før første kunde får en konto.
+
 ## Åbne spørgsmål til beslutning
 
 1. **Token-levetid 8 timer** (en arbejdsdag) frem for bidflows kortere default?
