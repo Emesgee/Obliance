@@ -18,6 +18,9 @@ dependencies = [
     "pwdlib[argon2]>=0.2,<1",
     "limits>=3.13,<6",
     "email-validator>=2.2,<3",
+    # documents (ADR-0005/0006): PDF text + page rendering, multipart uploads
+    "pymupdf>=1.24,<2",
+    "python-multipart>=0.0.12,<1",
 ]
 
 [dependency-groups]

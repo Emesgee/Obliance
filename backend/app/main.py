@@ -11,6 +11,7 @@ from sqlalchemy import text
 
 from app.api import auth as auth_api
 from app.api import contracts as contracts_api
+from app.api import documents as documents_api
 from app.core.config import settings
 from app.core.db import engine
 
@@ -24,6 +25,7 @@ def create_app() -> FastAPI:
     )
     app.include_router(auth_api.router)
     app.include_router(contracts_api.router)
+    app.include_router(documents_api.router)
 
     @app.get("/api/health", tags=["health"])
     def health() -> dict[str, str]:

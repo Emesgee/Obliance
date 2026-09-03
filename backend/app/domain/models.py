@@ -14,6 +14,7 @@ from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import (
+    Boolean,
     Date,
     DateTime,
     Enum,
@@ -277,3 +278,174 @@ class ContractAccess(Base):
     )
     reason: Mapped[str | None] = mapped_column(Text)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+# ---- documents (ADR-0005/0006) ------------------------------------------------------
+
+
+class DocType(enum.StrEnum):
+    """Agreement basis (first five) vs documentation (last three) — ADR-0006 §1."""
+
+    hovedkontrakt = "hovedkontrakt"
+    bilag = "bilag"
+    prisbilag = "prisbilag"
+    databehandleraftale = "databehandleraftale"
+    tillaeg = "tillaeg"
+    rapport = "rapport"
+    korrespondance = "korrespondance"
+    andet = "andet"
+
+
+AGREEMENT_DOC_TYPES: frozenset[DocType] = frozenset(
+    {
+        DocType.hovedkontrakt,
+        DocType.bilag,
+        DocType.prisbilag,
+        DocType.databehandleraftale,
+        DocType.tillaeg,
+    }
+)
+
+
+class VersionStatus(enum.StrEnum):
+    kladde = "kladde"
+    gaeldende = "gaeldende"
+    historisk = "historisk"
+
+
+class IngestStatus(enum.StrEnum):
+    afventer = "afventer"
+    koerer = "koerer"
+    ok = "ok"
+    fejlet = "fejlet"
+
+
+class ContractDocument(Base):
+    """Logical document (child of the contract). Files live in document_versions."""
+
+    __tablename__ = "contract_documents"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    )
+    contract_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("contracts.id", ondelete="RESTRICT"), nullable=False
+    )
+    doc_type: Mapped[DocType] = mapped_column(_pg_enum(DocType, "doc_type"), nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    # Exactly one gaeldende version per document (partial unique index in 0003).
+    current_version_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    # tillaeg only: the document this amendment supplements (ADR-0006 afklaring 3).
+    amends_document_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("contract_documents.id", ondelete="RESTRICT")
+    )
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("profiles.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
+
+
+class DocumentVersion(Base):
+    """An immutable uploaded file. Never updated in content, never deleted by the
+    app role (ADR-0006 §1) — only ADR-0012's retention role may remove one."""
+
+    __tablename__ = "document_versions"
+    __table_args__ = (
+        UniqueConstraint("document_id", "version_no"),
+        UniqueConstraint("document_id", "sha256"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    )
+    contract_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("contracts.id", ondelete="RESTRICT"), nullable=False
+    )
+    document_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("contract_documents.id", ondelete="RESTRICT"), nullable=False
+    )
+    version_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    storage_key: Mapped[str] = mapped_column(Text, nullable=False)
+    sha256: Mapped[str] = mapped_column(Text, nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    mime: Mapped[str] = mapped_column(Text, nullable=False)
+    original_filename: Mapped[str] = mapped_column(Text, nullable=False)
+    uploaded_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("profiles.id", ondelete="SET NULL")
+    )
+    uploaded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
+    status: Mapped[VersionStatus] = mapped_column(
+        _pg_enum(VersionStatus, "version_status"),
+        nullable=False,
+        server_default=VersionStatus.kladde.value,
+    )
+    made_current_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("profiles.id", ondelete="SET NULL")
+    )
+    made_current_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Rendered PDF for non-PDF uploads (bidflow ADR-0049), lazily.
+    pdf_storage_key: Mapped[str | None] = mapped_column(Text)
+    ingest_status: Mapped[IngestStatus] = mapped_column(
+        _pg_enum(IngestStatus, "ingest_status"),
+        nullable=False,
+        server_default=IngestStatus.afventer.value,
+    )
+    ingest_error: Mapped[str | None] = mapped_column(Text)
+    ocr_applied: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    page_count: Mapped[int | None] = mapped_column(Integer)
+    effective_note: Mapped[str | None] = mapped_column(Text)
+
+
+class DocumentPage(Base):
+    """Page text per version — the substrate for citation verification (ADR-0005)."""
+
+    __tablename__ = "document_pages"
+    __table_args__ = (PrimaryKeyConstraint("version_id", "page_pdf"),)
+
+    version_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("document_versions.id", ondelete="CASCADE")
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    )
+    contract_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("contracts.id", ondelete="RESTRICT"), nullable=False
+    )
+    page_pdf: Mapped[int] = mapped_column(Integer)
+    # The document's own printed page label, if one could be read (bidflow ADR-0062).
+    page_printed: Mapped[str | None] = mapped_column(Text)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class DocumentClause(Base):
+    """Heuristic clause index (ADR-0005 §2): '8.2', 'Bilag 5', 'Tabel 1', '§ 3'."""
+
+    __tablename__ = "document_clauses"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    version_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("document_versions.id", ondelete="CASCADE"), nullable=False
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    )
+    contract_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("contracts.id", ondelete="RESTRICT"), nullable=False
+    )
+    clause_ref: Mapped[str] = mapped_column(Text, nullable=False)
+    heading: Mapped[str] = mapped_column(Text, nullable=False)
+    page_pdf: Mapped[int] = mapped_column(Integer, nullable=False)
+    char_start: Mapped[int] = mapped_column(Integer, nullable=False)
+    char_end: Mapped[int] = mapped_column(Integer, nullable=False)

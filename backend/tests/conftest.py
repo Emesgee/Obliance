@@ -15,6 +15,7 @@ created by infra/postgres/init/01-roles.sql on first init).
 from __future__ import annotations
 
 import os
+import tempfile
 import uuid
 from collections.abc import Callable, Generator
 from pathlib import Path
@@ -39,6 +40,8 @@ os.environ.setdefault("APP_ENV", "test")
 # suite never trips it; the dedicated rate-limit test tightens it at runtime.
 os.environ.setdefault("SECRET_KEY", "test-secret-not-for-anything-else-0123456789")
 os.environ.setdefault("RATELIMIT_LOGIN", "1000 per minute")
+# Documents (ADR-0006): uploads land in a throwaway directory, never in the repo.
+os.environ.setdefault("STORAGE_ROOT", tempfile.mkdtemp(prefix="obliance-storage-"))
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 

@@ -38,3 +38,4 @@ genbruges, skrives den om her med nyt domænesprog og et link tilbage.
 | [0022](0022-rapporter-og-eksport.md) | Rapporter og eksport — afledte udtræk, samme forespørgsel som skærmen, hver eksport logget | Accepted | N20 |
 | [0023](0023-stak-repo-layout-og-ci-gates.md) | Stak, repo-layout og CI-gates — det, tyve ADR'er har antaget, gjort eksplicit | Accepted | plan §1.1 |
 | [0024](0024-auth-increment-1.md) | Auth, increment 1 — stateless login, RBAC som dependency, første datarute | Proposed | plan §1.2, K05 |
+| [0025](0025-storage-facade.md) | Storage-facade — én port, lokal disk i dev, objektstorage i drift | Accepted | bidflow 0007 |

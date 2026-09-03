@@ -22,7 +22,10 @@ type Detail = { error?: string; code?: string } | string | undefined;
 
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
-  if (!headers.has("Content-Type") && init.body) headers.set("Content-Type", "application/json");
+  // FormData sets its own multipart boundary; only JSON bodies get a Content-Type here.
+  if (!headers.has("Content-Type") && init.body && !(init.body instanceof FormData)) {
+    headers.set("Content-Type", "application/json");
+  }
   if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
 
   const res = await fetch(path, { ...init, headers });
@@ -36,6 +39,15 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     throw new ApiError(res.status, code, error);
   }
   return body as T;
+}
+
+/** Binary GET (document originals). Same Bearer, same same-origin rule. */
+export async function apiBlob(path: string): Promise<Blob> {
+  const headers = new Headers();
+  if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
+  const res = await fetch(path, { headers });
+  if (!res.ok) throw new ApiError(res.status, "error", `Fejl ${res.status}`);
+  return res.blob();
 }
 
 // ---- types mirrored from backend/app/api/schemas.py (replaced by the generated
@@ -72,3 +84,40 @@ export type Contract = {
 };
 
 export type ContractList = { items: Contract[]; total: number };
+
+// ---- documents (ADR-0005/0006) ----------------------------------------------
+
+export type DocumentVersion = {
+  id: string;
+  document_id: string;
+  version_no: number;
+  status: "kladde" | "gaeldende" | "historisk";
+  ingest_status: "afventer" | "koerer" | "ok" | "fejlet";
+  ingest_error: string | null;
+  original_filename: string;
+  mime: string;
+  size_bytes: number;
+  sha256: string;
+  page_count: number | null;
+  ocr_applied: boolean;
+  uploaded_by: string | null;
+  uploaded_at: string;
+  made_current_by: string | null;
+  made_current_at: string | null;
+  effective_note: string | null;
+};
+
+export type ContractDocument = {
+  id: string;
+  contract_id: string;
+  doc_type: string;
+  title: string;
+  current_version_id: string | null;
+  amends_document_id: string | null;
+  created_at: string;
+  versions: DocumentVersion[];
+};
+
+export type Page = { page_pdf: number; page_printed: string | null; text: string };
+
+export type Clause = { clause_ref: string; heading: string; page_pdf: number; char_start: number; char_end: number };

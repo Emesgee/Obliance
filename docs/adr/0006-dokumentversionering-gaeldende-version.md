@@ -226,3 +226,22 @@ flowchart TB
 3. **Tillæg er et selvstændigt dokument** (`doc_type = tillaeg` + `amends_document_id`),
    ikke en ny version af hovedkontrakten. Et tillæg supplerer; hovedkontraktens
    citations forbliver gyldige.
+
+## Implementeringsnote (2026-09-03, første increment)
+
+Bygget i `backend/app/documents/` og migration `0003_documents`: de to tabeller med
+invarianterne fra §1 (partial unique index, `UNIQUE(document_id, sha256)`, intet
+`DELETE` til app-rollen), `document_pages` og `document_clauses` (ADR-0005), ingest i
+§2's rækkefølge (PDF → sidetekst hårdt; klausuler best-effort; trin 4 chunks/embeddings
+venter på LLM-laget) og `make_current` som eneste vej til `gaeldende` med hændelsen
+`document_version_changed`. Afvigelser fra teksten, der gælder indtil videre:
+
+- **Ingest kører inline i dev/test** (ingen Redis lokalt); i staging/prod er det et
+  worker-job (N03). Uploadet svarer derfor med `ingest_status = ok` med det samme.
+- **Hændelsen har endnu ingen lyttere** (ADR-0004/0005-lytterne kommer med deres
+  kode) og persisteres ikke som outbox før N03.
+- **OCR er ikke bygget**: en scannet PDF får `ingest_status = ok` med sidetekst tom og
+  `ingest_error = "kunne ikke læses"`, så versionen kan gøres gældende som fil, men
+  ikke citeres.
+- Storage-porten er udskilt som **ADR-0025**.
+

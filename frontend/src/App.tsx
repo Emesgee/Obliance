@@ -1,5 +1,6 @@
 import { Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "./auth";
+import ContractDetail from "./pages/ContractDetail";
 import Contracts from "./pages/Contracts";
 import Login from "./pages/Login";
 
@@ -47,6 +48,7 @@ export default function App() {
         <Route element={<RequireAuth />}>
           <Route element={<Shell />}>
             <Route index element={<Contracts />} />
+            <Route path="/contracts/:id" element={<ContractDetail />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Route>

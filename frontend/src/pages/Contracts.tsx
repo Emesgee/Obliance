@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import type { FormEvent } from "react";
+import { Link } from "react-router-dom";
 import { api, ApiError, type Contract, type ContractList } from "../api/client";
 import { useAuth } from "../auth";
 
@@ -115,7 +116,7 @@ export default function Contracts() {
             <tbody>
               {q.data.items.map((c) => (
                 <tr key={c.id} className="border-b border-line last:border-0">
-                  <td className="px-4 py-3 font-mono">{c.reference}</td>
+                  <td className="px-4 py-3 font-mono"><Link to={`/contracts/${c.id}`} className="text-accent underline">{c.reference}</Link></td>
                   <td className="px-4 py-3">{c.name}</td>
                   <td className="px-4 py-3"><Pill kind="phase">{c.phase}</Pill></td>
                   <td className="px-4 py-3"><Pill kind={c.confidentiality}>{c.confidentiality}</Pill></td>
