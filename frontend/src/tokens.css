@@ -1,0 +1,60 @@
+/* tokens.css — the ONLY file that may contain a hex colour (ADR-0015, gate G-02).
+ *
+ * Values are the mockup's palette (contractflow-ai-amgros.html) with four text
+ * colours darkened to pass WCAG 2.2 AA (measured in ADR-0015 §2):
+ *   grey   #8A97AB → #66728A  (2.96 → 4.84 on card)
+ *   green  #1B8A57 → #136B44  (3.86 → 5.79 on greenBg)
+ *   yellow #B27A10 → #7D540A  (3.29 → 5.95 on yellowBg)
+ *   red    #C23A3A → #9B2727  (4.47 → 6.52 on redBg)
+ * The lighter originals survive as *-mark for dots, bars and chart fills (3:1 rule).
+ *
+ * AI has its own hue (--ai). Seeing violet means: a proposal nobody has approved.
+ */
+:root {
+  /* brand */
+  --navy: #122647;
+  --navy-2: #1e3a66;
+  --navy-soft: #24447a;
+  --accent: #2e5fb7;
+
+  /* text */
+  --ink: #17202e;
+  --slate: #5c6b84;
+  --muted: #66728a;        /* was grey #8A97AB */
+
+  /* surfaces */
+  --bg: #f6f8fb;
+  --card: #ffffff;
+  --line: #e3e8f0;
+  --blue-bg: #e9f0fb;
+
+  /* status — text variants (AA) */
+  --ok: #136b44;           /* was #1B8A57 */
+  --ok-bg: #e5f5ec;
+  --warn: #7d540a;         /* was #B27A10 */
+  --warn-bg: #fbf1da;
+  --crit: #9b2727;         /* was #C23A3A */
+  --crit-bg: #fbe7e7;
+  --none: #66728a;         /* "data mangler" — a fourth, equal state */
+  --none-bg: #eef1f6;
+
+  /* status — mark variants (dots, bars, charts; 3:1) */
+  --ok-mark: #1b8a57;
+  --warn-mark: #b27a10;
+  --crit-mark: #c23a3a;
+  --none-mark: #8a97ab;
+
+  /* AI — proposals only, never for actions or status */
+  --ai: #4b5aa6;
+  --ai-bg: #edf0fb;
+
+  /* shape */
+  --radius: 14px;
+  --radius-sm: 10px;
+  --shadow: 0 1px 2px rgba(18, 38, 71, 0.05), 0 4px 14px rgba(18, 38, 71, 0.05);
+  --shadow-lg: 0 10px 32px rgba(18, 38, 71, 0.16);
+
+  /* type */
+  --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas, monospace;
+}

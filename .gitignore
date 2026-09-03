@@ -1,0 +1,27 @@
+# secrets — never committed (ADR-0007 §5, ADR-0023 gate G-17)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+backend/storage/
+
+# node
+node_modules/
+frontend/dist/
+frontend/src/api/generated/
+
+# tooling
+.idea/
+.vscode/
+*.log
+.DS_Store
+Thumbs.db

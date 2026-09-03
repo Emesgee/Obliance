@@ -1,0 +1,89 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  gates:
+    name: Gates G-01 G-02 G-04 G-14 (ADR-0023 §5)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python scripts/gates.py
+
+  backend:
+    name: Backend — RLS + skema-vagt mod rigtig Postgres (G-05, G-13)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      # Migrations run as the schema owner; tests connect as the NON-superuser
+      # app role so FORCE ROW LEVEL SECURITY actually applies (ADR-0002, bidflow 0004).
+      MIGRATE_DATABASE_URL: postgresql+psycopg://obliance_migrator:obliance_migrator@localhost:5432/obliance_test
+      TEST_DATABASE_URL: postgresql+psycopg://obliance_app:obliance_app@localhost:5432/obliance_test
+      DATABASE_URL: postgresql+psycopg://obliance_app:obliance_app@localhost:5432/obliance_test
+      REDIS_URL: redis://localhost:6379/0
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Create roles + test database (same SQL as the compose init)
+        env:
+          PGPASSWORD: postgres
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q postgresql-client
+          psql -h localhost -U postgres -v ON_ERROR_STOP=1 -f infra/postgres/init/01-roles.sql
+          psql -h localhost -U postgres -v ON_ERROR_STOP=1 -c "CREATE DATABASE obliance_test OWNER obliance_migrator;"
+          psql -h localhost -U postgres -v ON_ERROR_STOP=1 -d obliance_test -f infra/postgres/init/02-extensions.sql
+          psql -h localhost -U postgres -v ON_ERROR_STOP=1 -d obliance_test -c "ALTER SCHEMA public OWNER TO obliance_migrator;"
+
+      - name: Install
+        working-directory: backend
+        run: uv sync --frozen || uv sync
+
+      - name: Lint + types
+        working-directory: backend
+        run: |
+          uv run ruff check .
+          uv run mypy app
+
+      - name: Migrate (as obliance_migrator)
+        working-directory: backend
+        run: uv run alembic upgrade head
+
+      - name: Tests (as obliance_app)
+        working-directory: backend
+        run: uv run pytest -q
+
+  frontend:
+    name: Frontend — build (typed client must compile)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      # `npm ci` once package-lock.json is committed after the first local install.
+      - working-directory: frontend
+        run: |
+          npm install --no-audit --no-fund
+          npm run build

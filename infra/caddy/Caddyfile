@@ -1,0 +1,31 @@
+# Caddy — TLS (Let's Encrypt), static frontend, reverse proxy to the API.
+# The only public port in the stack (ADR-0007 §2). No Cloudflare in the data
+# path (ADR-0007 afklaring 1).
+
+{$SITE_ADDRESS} {
+	encode zstd gzip
+
+	# Security headers for a login-gated B2B app.
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	# API — SSE streams (copilot, ADR-0008) must not be buffered.
+	handle /api/* {
+		reverse_proxy api:8000 {
+			flush_interval -1
+			header_up X-Forwarded-Proto {scheme}
+		}
+	}
+
+	# Static frontend build (ADR-0007: no dev server in prod).
+	handle {
+		root * /srv/frontend
+		try_files {path} /index.html
+		file_server
+	}
+}

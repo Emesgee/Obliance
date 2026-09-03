@@ -1,0 +1,49 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Base — everything reads tokens.css; no colour literal here (gate G-02). */
+@layer base {
+  html {
+    font-family: var(--font-sans);
+    color: var(--ink);
+    background: var(--bg);
+    -webkit-font-smoothing: antialiased;
+  }
+  body {
+    margin: 0;
+    background: var(--bg);
+  }
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+/* Component classes that carry the ADRs (ADR-0015 §4). Kept minimal until
+ * the screens exist; each one is named after the decision it renders. */
+@layer components {
+  .pill {
+    @apply inline-flex items-center rounded-full px-2.5 py-0.5 font-mono text-xs font-medium;
+  }
+  .status-dot {
+    @apply inline-block h-2.5 w-2.5 rounded-full;
+  }
+  .ai-suggestion {
+    @apply rounded-cc border-l-4 border-ai bg-ai-bg p-4;
+  }
+  .citation-chip {
+    @apply inline-flex items-center gap-1 rounded-sm bg-blue-bg px-2 py-0.5 font-mono text-xs text-accent;
+  }
+  .calc-basis {
+    @apply font-mono tabular-nums text-sm text-ink;
+  }
+}
