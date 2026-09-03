@@ -1,0 +1,17 @@
+# Normalise line endings: LF in the repo, LF on checkout for everything that
+# runs on Linux (shell scripts, Dockerfiles, Caddyfile, SQL). A CRLF shebang
+# breaks `#!/usr/bin/env bash` on the server (infra/backup/backup.sh).
+* text=auto eol=lf
+
+*.sh        text eol=lf
+Dockerfile* text eol=lf
+Caddyfile   text eol=lf
+*.sql       text eol=lf
+*.py        text eol=lf
+*.mako      text eol=lf
+
+# Binary
+*.png  binary
+*.jpg  binary
+*.pdf  binary
+*.gpg  binary
