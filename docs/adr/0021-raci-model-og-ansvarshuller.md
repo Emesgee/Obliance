@@ -250,3 +250,22 @@ erDiagram
    i `workload_policies`.
 3. **G3-fund foreslår en kandidat automatisk** — laveste belastning i samme funktion og
    afdeling. Et menneske vælger stadig; uden kandidat er fundet en diagnose uden handling.
+
+## Implementeringsnote (2026-09-04, første increment)
+
+Bygget (migration 0009): `raci_activities` + `raci_assignments` (én række pr. udfyldt
+celle), `contract_roles` (én aktiv person pr. funktion; CO/CM spejles til
+`owner_id`/`manager_id`, og kontraktoprettelse spejler den anden vej), `raci_templates`
+seedet globalt pr. niveau og aftaleform, `workload_policies` med defaults fra afklaring
+2, og `tasks` som mål for `task`-forslag. §1's regler håndhæves i servicelaget ved
+oprettelse, celleændring og godkendelse af forslag (afklaring 1); et ugyldigt forslag kan
+rettes af mennesket i selve godkendelsen (`payload_overrides`). RACI Design Agent
+(`raci_design`, Opus) læser skabeloner som datablok plus aftalegrundlaget og foreslår
+aktiviteter med funktioner — aldrig personer. Responsibility Gap kører G1–G7 som regler
+uden model med fingerprint pr. (regel, objekt), auto-lukker forsvundne huller og foreslår
+kandidat ved G3 (laveste belastning i samme funktion; "samme afdeling" er ikke modelleret
+endnu, afklaring 3). Workload & Capacity tæller som §5 og foreslår en kandidat over
+tærsklen. Ikke bygget: natlig kørsel (venter på ADR-0010's scheduler — agenterne køres
+manuelt bag `agenter`), `supplier_contacts` for LEV (fri tekst indtil ADR-0020), Meeting
+Preparation Agent (§6), ADR-0017's `responsible_ids` fra `contract_roles`.
+

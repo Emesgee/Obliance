@@ -113,12 +113,17 @@ def approve(
     principal: Principal = Depends(require(access.HITL)),
     session: Session = Depends(tenant_session),
 ) -> SuggestionOut:
+    comment = body.comment if body else None
+    if body and body.payload_overrides:
+        target = session.get(AiSuggestion, suggestion_id)
+        if target is not None:
+            target.payload = {**target.payload, **body.payload_overrides}
+            session.flush()
+            keys = ", ".join(sorted(body.payload_overrides))
+            comment = " · ".join(x for x in [comment, f"rettet før godkendelse: {keys}"] if x)
     try:
         s = suggestions.approve(
-            session,
-            suggestion_id=suggestion_id,
-            principal=principal,
-            comment=body.comment if body else None,
+            session, suggestion_id=suggestion_id, principal=principal, comment=comment
         )
     except suggestions.SuggestionError as e:
         raise _raise(e) from e

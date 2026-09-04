@@ -21,6 +21,7 @@ import ClaimsSection from "./contract/Claims";
 import InvoicesSection from "./contract/Invoices";
 import KpisSection from "./contract/Kpis";
 import ObligationsSection from "./contract/Obligations";
+import RaciSection from "./contract/Raci";
 import RisksSection from "./contract/Risks";
 
 // Contract detail: master data, documents with immutable versions (ADR-0006),
@@ -533,6 +534,7 @@ export default function ContractDetail() {
       <InvoicesSection contract={c} />
       <ClaimsSection contract={c} />
       <RisksSection contract={c} />
+      <RaciSection contract={c} />
 
       <div className="mb-4 flex items-center justify-between">
         <h2 className="text-lg font-semibold">Dokumenter</h2>

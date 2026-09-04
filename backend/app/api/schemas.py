@@ -40,6 +40,9 @@ from app.domain.models import (
     Origin,
     PenaltyBasis,
     PenaltyTimeUnit,
+    RaciFunction,
+    RaciLetter,
+    RaciStatus,
     RiskCategory,
     RiskLevel,
     RiskStatus,
@@ -48,6 +51,8 @@ from app.domain.models import (
     SuggestionStatus,
     SuggestionSubject,
     TargetOperator,
+    TaskPriority,
+    TaskStatus,
     TermStatus,
     TermType,
     VersionStatus,
@@ -220,6 +225,9 @@ class SuggestionOut(BaseModel):
 
 class ApproveIn(BaseModel):
     comment: str | None = Field(default=None, max_length=2000)
+    # A human's correction of the proposal before it is applied (ADR-0021 §4: an
+    # invalid matrix "cannot be approved without correction"). Merged into payload.
+    payload_overrides: dict[str, Any] | None = None
 
 
 class RejectIn(BaseModel):
@@ -785,6 +793,114 @@ class InvoiceDecisionIn(BaseModel):
 
 class SpendOut(BaseModel):
     by_year: dict[int, Decimal]
+
+
+# ---- RACI, roles, tasks (ADR-0021) ---------------------------------------------------------
+
+
+class MemberOut(BaseModel):
+    id: uuid.UUID
+    name: str
+    email: str
+    role: str
+    deactivated: bool
+
+
+class RaciActivityOut(BaseModel):
+    id: uuid.UUID
+    contract_id: uuid.UUID
+    seq: int
+    ref: str
+    name: str
+    criticality: Criticality
+    status: RaciStatus
+    template_key: str | None
+    origin: Origin
+    cells: dict[str, str]
+    validation_errors: list[str]
+    citations: list[CitationOut]
+
+
+class ContractRoleOut(BaseModel):
+    function: RaciFunction
+    label: str
+    profile_id: uuid.UUID | None
+    person_name: str | None
+    deactivated: bool
+    supplier_contact: str | None
+    since: date | None
+
+
+class RaciOut(BaseModel):
+    activities: list[RaciActivityOut]
+    roles: list[ContractRoleOut]
+    functions: list[dict[str, str]]
+
+
+class RaciActivityCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    criticality: Criticality = Criticality.mellem
+    cells: dict[str, str]
+
+
+class RaciActivityPatch(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    criticality: Criticality | None = None
+
+
+class RaciCellIn(BaseModel):
+    letter: RaciLetter | None  # None clears the cell
+
+
+class RoleAssignIn(BaseModel):
+    profile_id: uuid.UUID | None = None
+    supplier_contact: str | None = Field(default=None, max_length=200)
+
+
+class TaskOut(BaseModel):
+    id: uuid.UUID
+    contract_id: uuid.UUID | None
+    seq: int
+    ref: str
+    title: str
+    description: str | None
+    responsible_id: uuid.UUID | None
+    deadline: date | None
+    priority: TaskPriority
+    status: TaskStatus
+    origin: Origin
+    origin_kind: str | None
+    origin_ref: str | None
+    created_at: datetime
+    closed_at: datetime | None
+
+
+class TaskCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    description: str | None = None
+    responsible_id: uuid.UUID | None = None
+    deadline: date | None = None
+    priority: TaskPriority = TaskPriority.mellem
+
+
+class TaskPatch(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    description: str | None = None
+    responsible_id: uuid.UUID | None = None
+    deadline: date | None = None
+    priority: TaskPriority | None = None
+    status: TaskStatus | None = None
+
+
+class WorkloadOut(BaseModel):
+    profile_id: uuid.UUID
+    name: str
+    cm_contracts: int
+    co_contracts: int
+    weighted: int
+    open_items: int
+    functions: dict[str, int]
+    over_threshold: bool
 
 
 # ---- dashboard (ADR-0001 §Overblik: a roll-up, nothing stored) ------------------------------

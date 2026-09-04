@@ -114,7 +114,7 @@ def Session_(
             text(
                 "SELECT tablename FROM pg_tables "
                 "WHERE schemaname='public' "
-                "AND tablename NOT IN ('alembic_version', 'role_permissions')"  # seeded reference data
+                "AND tablename NOT IN ('alembic_version', 'role_permissions', 'raci_templates')"  # seeded reference data
             )
         ).fetchall()
         tables = ", ".join(f'"{r[0]}"' for r in rows)

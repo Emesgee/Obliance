@@ -18,6 +18,7 @@ from app.api import documents as documents_api
 from app.api import economy as economy_api
 from app.api import finance as finance_api
 from app.api import obligations as obligations_api
+from app.api import raci as raci_api
 from app.api import risks as risks_api
 from app.core.config import settings
 from app.core.db import engine
@@ -38,6 +39,7 @@ def create_app() -> FastAPI:
     app.include_router(dashboard_api.router)
     app.include_router(finance_api.router)
     app.include_router(economy_api.router)
+    app.include_router(raci_api.router)
     app.include_router(ai_api.router)
     agents.register()  # ADR-0006 §3 listeners: expire suggestions, run intake
 

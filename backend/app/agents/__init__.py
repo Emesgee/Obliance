@@ -10,7 +10,16 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from app.agents import contract_intake, kpi_parse, obligation_extract, risk_assess, sla_terms
+from app.agents import (
+    contract_intake,
+    kpi_parse,
+    obligation_extract,
+    raci_design,
+    risk_assess,
+    rules,
+    sla_terms,
+    tasks,
+)
 from app.ai import resolution, suggestions
 from app.core import events, jobs
 from app.core.db import SessionLocal
@@ -22,10 +31,13 @@ AGENTS: dict[str, Any] = {
     obligation_extract.AGENT_KEY: obligation_extract,
     risk_assess.AGENT_KEY: risk_assess,
     kpi_parse.AGENT_KEY: kpi_parse,
+    raci_design.AGENT_KEY: raci_design,
+    rules.GAP_KEY: rules.responsibility_gap,
+    rules.WORKLOAD_KEY: rules.workload_capacity,
 }
-_ = sla_terms  # imported for its materializer registrations (kpi, penalty_term)
+_ = (sla_terms, tasks)  # imported for their materializer registrations
 # The document-driven agents, in the order they run on a version switch (ADR-0006 §4).
-ON_VERSION_SWITCH = (contract_intake, obligation_extract, risk_assess)
+ON_VERSION_SWITCH = (contract_intake, obligation_extract, risk_assess, raci_design)
 
 
 def _on_version_changed(

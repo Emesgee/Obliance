@@ -117,7 +117,9 @@ class _Router(FakeProvider):
     def complete(self, req):
         m = re.search(r'<dokument id="([^"]+)"', req.material)
         doc_id = m.group(1) if m else "?"
-        if "Risk Agent" in req.system:
+        if "RACI Design Agent" in req.system:
+            text = json.dumps({"activities": [], "rationale": "-"})
+        elif "Risk Agent" in req.system:
             text = _risks(doc_id)
         elif "Obligation Extraction Agent" in req.system:
             text = json.dumps({"obligations": [], "rationale": "ingen"})

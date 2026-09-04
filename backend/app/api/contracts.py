@@ -19,6 +19,7 @@ from app.api.schemas import ContractCreate, ContractListOut, ContractOut
 from app.core import access
 from app.core.auth import Principal, current_principal, require, tenant_session
 from app.domain.models import Confidentiality, Contract
+from app.raci import service as raci_service
 
 router = APIRouter(prefix="/api/contracts", tags=["contracts"])
 
@@ -79,4 +80,5 @@ def create_contract(
             detail={"error": "Referencen findes allerede", "code": "reference_taken"},
         ) from e
     session.refresh(contract)
+    raci_service.sync_roles_from_contract(session, contract, principal.user_id)
     return mask_financials(ContractOut.model_validate(contract), principal)

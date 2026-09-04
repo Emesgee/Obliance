@@ -15,12 +15,12 @@ const dkTime = new Intl.DateTimeFormat("da-DK", { dateStyle: "short", timeStyle:
 const SUBJECT: Record<string, string> = {
   contract_intake: "Stamdata", obligation: "Forpligtelse", risk: "Risiko", raci_entry: "RACI",
   invoice_finding: "Faktura", sla_breach: "SLA-brud", task: "Opgave", kpi: "KPI", kpi_measurement: "Måling",
-  penalty_term: "Bodsklausul",
+  penalty_term: "Bodsklausul", invoice_match: "Fakturamatch", price_term: "Pris",
 };
 const KIND: Record<string, string> = { opsigelse: "Opsigelse", udloeb: "Udløb", forpligtelse: "Forpligtelse", risiko: "Risiko" };
 const TASK: Record<string, string> = {
   contract_intake: "Contract Intake", obligation_extract: "Obligation Extraction", risk_assess: "Risk",
-  kpi_parse: "KPI/SLA", copilot: "Copilot",
+  kpi_parse: "KPI/SLA", raci_design: "RACI Design", copilot: "Copilot",
 };
 
 function Tile({ label, value, tone, to }: { label: string; value: string | number; tone?: "crit" | "warn" | "ok" | "accent"; to?: string }) {

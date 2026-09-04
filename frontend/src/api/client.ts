@@ -424,6 +424,58 @@ export type InvoiceFindingPayload = {
 
 export type PriceTermPayload = { product_ref: string | null; description: string; unit: string | null; agreed_unit_price: string };
 
+// ---- RACI, roles, tasks (ADR-0021) ------------------------------------------------
+
+export type Member = { id: string; name: string; email: string; role: string; deactivated: boolean };
+
+export type RaciActivity = {
+  id: string;
+  contract_id: string;
+  seq: number;
+  ref: string;
+  name: string;
+  criticality: "lav" | "mellem" | "hoej" | "kritisk";
+  status: "godkendt" | "foreslaaet";
+  template_key: string | null;
+  origin: "human" | "ai";
+  cells: Record<string, string>;
+  validation_errors: string[];
+  citations: CitationRow[];
+};
+
+export type ContractRole = {
+  function: string;
+  label: string;
+  profile_id: string | null;
+  person_name: string | null;
+  deactivated: boolean;
+  supplier_contact: string | null;
+  since: string | null;
+};
+
+export type Raci = { activities: RaciActivity[]; roles: ContractRole[]; functions: { key: string; label: string }[] };
+
+export type Task = {
+  id: string;
+  contract_id: string | null;
+  seq: number;
+  ref: string;
+  title: string;
+  description: string | null;
+  responsible_id: string | null;
+  deadline: string | null;
+  priority: "lav" | "mellem" | "hoej";
+  status: "aaben" | "igang" | "lukket";
+  origin: "human" | "ai";
+  origin_kind: string | null;
+  origin_ref: string | null;
+  created_at: string;
+  closed_at: string | null;
+};
+
+export type RaciPayload = { name: string; criticality: string; template_key: string | null; cells: Record<string, string>; validation_errors: string[] };
+export type TaskPayload = { title: string; description: string; priority: string; rule?: string; object_ref?: string; candidate_id: string | null; candidate_name: string | null };
+
 // ---- dashboard (ADR-0001 §Overblik) ----------------------------------------------
 
 export type Dashboard = {

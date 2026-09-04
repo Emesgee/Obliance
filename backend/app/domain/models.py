@@ -510,6 +510,13 @@ class AuditAction(enum.StrEnum):
     invoice_checked = "invoice_checked"
     invoice_approved = "invoice_approved"
     invoice_rejected = "invoice_rejected"
+    # added in migration 0009 (ADR-0021)
+    raci_activity_created = "raci_activity_created"
+    raci_activity_updated = "raci_activity_updated"
+    raci_cell_changed = "raci_cell_changed"
+    contract_role_assigned = "contract_role_assigned"
+    task_created = "task_created"
+    task_updated = "task_updated"
 
 
 class SuggestionKind(enum.StrEnum):
@@ -1487,6 +1494,218 @@ class InvoiceLine(Base):
     period_from: Mapped[date | None] = mapped_column(Date)
     period_to: Mapped[date | None] = mapped_column(Date)
     product_ref: Mapped[str | None] = mapped_column(Text)
+
+
+# ---- RACI, roles, tasks (migration 0009: ADR-0021) -----------------------------------------
+
+
+class RaciFunction(enum.StrEnum):
+    CM = "CM"
+    CO = "CO"
+    PROC = "PROC"
+    LEGAL = "LEGAL"
+    FIN = "FIN"
+    IT = "IT"
+    BUS = "BUS"
+    LEV = "LEV"
+
+
+class RaciLetter(enum.StrEnum):
+    R = "R"
+    A = "A"
+    C = "C"
+    I = "I"  # noqa: E741 — the RACI letter
+
+
+class RaciStatus(enum.StrEnum):
+    godkendt = "godkendt"
+    foreslaaet = "foreslaaet"
+
+
+class TaskStatus(enum.StrEnum):
+    aaben = "aaben"
+    igang = "igang"
+    lukket = "lukket"
+
+
+class TaskPriority(enum.StrEnum):
+    lav = "lav"
+    mellem = "mellem"
+    hoej = "hoej"
+
+
+class RaciActivity(Base):
+    """A row of the matrix (ADR-0021 §1). Cells live in raci_assignments."""
+
+    __tablename__ = "raci_activities"
+    __table_args__ = (UniqueConstraint("contract_id", "seq"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    )
+    contract_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("contracts.id", ondelete="RESTRICT"), nullable=False
+    )
+    seq: Mapped[int] = mapped_column(Integer, nullable=False)  # RA-<seq>
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    criticality: Mapped[Criticality] = mapped_column(
+        _pg_enum(Criticality, "criticality"), nullable=False
+    )
+    status: Mapped[RaciStatus] = mapped_column(
+        _pg_enum(RaciStatus, "raci_status"),
+        nullable=False,
+        server_default=RaciStatus.godkendt.value,
+    )
+    template_key: Mapped[str | None] = mapped_column(Text)
+    origin: Mapped[Origin] = mapped_column(_pg_enum(Origin, "origin_kind"), nullable=False)
+    suggestion_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("profiles.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
+
+
+class RaciAssignment(Base):
+    """One row per filled cell; empty cells do not exist (ADR-0021 §1)."""
+
+    __tablename__ = "raci_assignments"
+    __table_args__ = (UniqueConstraint("activity_id", "function"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    )
+    contract_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("contracts.id", ondelete="RESTRICT"), nullable=False
+    )
+    activity_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("raci_activities.id", ondelete="CASCADE"), nullable=False
+    )
+    function: Mapped[RaciFunction] = mapped_column(
+        _pg_enum(RaciFunction, "raci_function"), nullable=False
+    )
+    letter: Mapped[RaciLetter] = mapped_column(_pg_enum(RaciLetter, "raci_letter"), nullable=False)
+
+
+class ContractRole(Base):
+    """Function → person per contract (ADR-0021 §2). One active row per
+    (contract, function); CO/CM are mirrored onto contracts.owner_id/manager_id."""
+
+    __tablename__ = "contract_roles"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    )
+    contract_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("contracts.id", ondelete="RESTRICT"), nullable=False
+    )
+    function: Mapped[RaciFunction] = mapped_column(
+        _pg_enum(RaciFunction, "raci_function"), nullable=False
+    )
+    profile_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("profiles.id", ondelete="SET NULL")
+    )
+    supplier_contact: Mapped[str | None] = mapped_column(Text)  # LEV only; ADR-0020 later
+    since: Mapped[date] = mapped_column(Date, nullable=False)
+    until: Mapped[date | None] = mapped_column(Date)
+    assigned_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("profiles.id", ondelete="SET NULL")
+    )
+
+
+class RaciTemplate(Base):
+    """Seeded per tier + agreement form (ADR-0021 §4). organization_id NULL = global."""
+
+    __tablename__ = "raci_templates"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE")
+    )
+    key: Mapped[str] = mapped_column(Text, nullable=False)
+    tiers: Mapped[list[str]] = mapped_column(JSONB, nullable=False)  # ["N1","N2"] or []
+    agreement_forms: Mapped[list[str]] = mapped_column(JSONB, nullable=False)  # [] = all
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    criticality: Mapped[Criticality] = mapped_column(
+        _pg_enum(Criticality, "criticality"), nullable=False
+    )
+    assignments: Mapped[dict[str, str]] = mapped_column(JSONB, nullable=False)  # {"CM": "A"}
+
+
+class WorkloadPolicy(Base):
+    __tablename__ = "workload_policies"
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), primary_key=True
+    )
+    max_weighted: Mapped[int] = mapped_column(Integer, nullable=False, server_default="30")
+    max_cm_contracts: Mapped[int] = mapped_column(Integer, nullable=False, server_default="15")
+    tier_weights: Mapped[dict[str, int]] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default=text("""'{"N1": 3, "N2": 2, "N3": 1, "N4": 1}'::jsonb"""),
+    )
+
+
+class Task(Base):
+    """ADR-0001 child with an origin; the target of `task` proposals (gaps, workload)."""
+
+    __tablename__ = "tasks"
+    __table_args__ = (UniqueConstraint("organization_id", "seq"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    )
+    contract_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("contracts.id", ondelete="RESTRICT")
+    )
+    seq: Mapped[int] = mapped_column(Integer, nullable=False)  # T-<seq>, per org
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    responsible_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("profiles.id", ondelete="SET NULL")
+    )
+    deadline: Mapped[date | None] = mapped_column(Date)
+    priority: Mapped[TaskPriority] = mapped_column(
+        _pg_enum(TaskPriority, "task_priority"),
+        nullable=False,
+        server_default=TaskPriority.mellem.value,
+    )
+    status: Mapped[TaskStatus] = mapped_column(
+        _pg_enum(TaskStatus, "task_status"), nullable=False, server_default=TaskStatus.aaben.value
+    )
+    origin_kind: Mapped[str | None] = mapped_column(Text)  # gap_rule · workload · obligation …
+    origin_ref: Mapped[str | None] = mapped_column(Text)
+    origin: Mapped[Origin] = mapped_column(_pg_enum(Origin, "origin_kind"), nullable=False)
+    suggestion_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("profiles.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class ImportError_(Base):

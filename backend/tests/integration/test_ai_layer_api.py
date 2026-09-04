@@ -123,7 +123,7 @@ def cm(client, make_org, make_user, make_contract, Session_):
     # This module tests the intake agent alone; the obligation agent (same trigger)
     # is paused for the org, which is also a test of ADR-0010 §2's switch.
     with tenant(org, system=True), Session_() as db:
-        for key in ("obligation_extract", "risk_assess"):
+        for key in ("obligation_extract", "risk_assess", "raci_design"):
             db.add(AgentSetting(organization_id=org, agent_key=key, enabled=False))
         db.commit()
     return org, contract, _login(client, "cm@test.dk")
