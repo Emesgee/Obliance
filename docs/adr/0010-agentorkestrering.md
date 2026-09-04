@@ -248,3 +248,44 @@ er isoleret i `app/core/jobs.py`: `sync` i test, `thread` i dev (ingen Redis på
 udviklingsmaskinen), `rq` i staging/prod — sidstnævnte fejler højlydt, indtil
 scheduler og worker-container er bygget. Natlige kørsler, advisory lock, batch,
 retry og alarmering venter på det.
+
+## Implementeringsnote (2026-09-04, andet increment: scheduler og natlige kørsler)
+
+- **Agentdefinitioner er kode** (`app/agents/definitions.py`, §1): nøgle, formål,
+  opgave, scope (`contract`/`org`), trigger og kadence som 5-felts cron i
+  Europe/Copenhagen. Obligation/Risk/RACI kører hændelsesdrevet plus natligt
+  sikkerhedsnet kl. 02:00/02:20/02:40; Responsibility Gap og Workload kl. 05:00/05:10;
+  Intake og KPI/SLA kun ved upload. `agent_settings.schedule_override` erstatter
+  kadencen for én organisation (ugyldig override logges og falder tilbage).
+- **Scheduler** (`app/jobs/scheduler.py`): et tick pr. minut i worker-containerens
+  proces (tråd ved siden af RQ-workeren, `python -m app.jobs.worker`); med flere
+  replikaer vinder én pr. minut via `SET NX` i Redis. `plan()` lister organisationer
+  i stigende antal overvågede kontrakter (§5) og enqueuer **ét job pr. (agent, org)**;
+  en pauset agent får en `sprunget_over · disabled`-række i stedet for et job (§2).
+  `python -m app.jobs.scheduler --once` viser, hvad et minut ville udløse.
+- **Org-kørslen** (`app/jobs/runs.py::run_org`, §3–§5): rådgivende lås
+  `pg_try_advisory_lock(hashtext(agent:org))` på egen forbindelse — en overlappende
+  kørsel bliver én række `sprunget_over · overlap`. Én `agent_runs`-række pr.
+  (agent, org, kørsel) med `contracts_scanned`, fund, tokens og pris summeret over
+  kontrakterne; loft `AGENT_CONTRACTS_PER_RUN` (500) og markør i
+  `error_context.cursor`, som næste kørsel fortsætter fra. Én kontrakts fejl logges
+  i `error_context.failed` og stopper ikke de øvrige; døgnbudgettet (ADR-0008's
+  `LlmBudgetExceeded`) stopper kørslen med `reason = budget` og markør.
+  Regelagenterne (org-scope) kører uændret bag samme lås.
+- **RQ** (`app/core/jobs.py`): kø `agents`, `Retry(max=2, interval=[60, 120])`,
+  `job_timeout` 5400 s (bidflow ADR-0026). Jobfunktioner er modulniveau, så RQ
+  adresserer dem ved importsti.
+- **Alarmering** (`app/jobs/alerts.py`, §7): tre fejl i træk, ingen `ok` i 48 timer,
+  døgnbudget ramt, batch uden afslutning i 24 timer. Vises på Overblik og
+  AI-agenter-siden; et dagligt job kl. 07:00 skriver dem som ERROR-linjer med agent,
+  org og run-id til workerens log (journald).
+- **API** `GET /api/agents`, `PUT /api/agents/{key}/settings` (pause kræver
+  begrundelse; skriver `paused_by/at/reason` og audit `agent_settings_changed`,
+  migration 0010), `GET /api/agents/{key}/runs`, `POST /api/agents/{key}/run` (afklaring
+  3 — samme job, samme lås, `trigger = manual`). Frontend: siden **Agenter** bag
+  `agenter`-tilladelsen.
+- **Endnu ikke bygget:** Batch API som normalvej for natlige kørsler (§6) — de
+  natlige kørsler går i dag synkront gennem `app/llm/` til fuld pris, som
+  `vertex_eu`-vejen altid vil; `batch_id`-feltet og alarmen for hængende batches
+  står klar. ERP-feed-trigger for Invoice Compliance venter på sftp/api-kilderne
+  (ADR-0018).

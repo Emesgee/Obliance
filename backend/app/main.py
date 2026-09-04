@@ -10,6 +10,7 @@ from fastapi import FastAPI
 from sqlalchemy import text
 
 from app import agents
+from app.api import agents as agents_api
 from app.api import ai as ai_api
 from app.api import auth as auth_api
 from app.api import contracts as contracts_api
@@ -41,6 +42,7 @@ def create_app() -> FastAPI:
     app.include_router(economy_api.router)
     app.include_router(raci_api.router)
     app.include_router(ai_api.router)
+    app.include_router(agents_api.router)
     agents.register()  # ADR-0006 §3 listeners: expire suggestions, run intake
 
     @app.get("/api/health", tags=["health"])

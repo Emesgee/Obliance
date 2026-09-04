@@ -8,7 +8,7 @@ PATCH /api/raci/activities/{id}                        name/criticality       [r
 PUT   /api/contracts/{id}/roles/{function}             staff a function       [raci_godkend]
 GET   /api/contracts/{id}/tasks · GET /api/tasks       open tasks
 POST  /api/contracts/{id}/tasks · PATCH /api/tasks/{id}                       [kontrakt_red]
-POST  /api/agents/{key}/run                            org-wide rule agents   [agenter]
+(org-wide "kør nu" lives in app/api/agents.py — ADR-0010)
 GET   /api/workload                                    §5 numbers            [brugere]
 """
 
@@ -21,7 +21,6 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.agents import AGENTS
 from app.api.schemas import (
     CitationOut,
     ContractRoleOut,
@@ -37,11 +36,10 @@ from app.api.schemas import (
     TaskPatch,
     WorkloadOut,
 )
-from app.core import access, audit, jobs
+from app.core import access, audit
 from app.core.auth import Principal, current_principal, require, tenant_session
 from app.core.db import SessionLocal
 from app.domain.models import (
-    AgentTrigger,
     AuditAction,
     Citation,
     Contract,
@@ -398,28 +396,6 @@ def patch_task(
 
 
 # ---- org-level agents and workload ------------------------------------------------------------
-
-
-@router.post("/agents/{agent_key}/run", status_code=status.HTTP_202_ACCEPTED)
-def run_org_agent(
-    agent_key: str,
-    principal: Principal = Depends(require(access.AGENTER)),
-    session: Session = Depends(tenant_session),
-) -> dict[str, str]:
-    agent = AGENTS.get(agent_key)
-    if agent is None or not hasattr(agent, "run_for_org"):
-        raise HTTPException(
-            status.HTTP_404_NOT_FOUND,
-            detail={"error": "Ukendt eller ikke org-dækkende agent", "code": "unknown_agent"},
-        )
-    session.commit()
-    jobs.enqueue(
-        agent.run_for_org,
-        org_id=principal.org_id,
-        trigger=AgentTrigger.manual,
-        triggered_by=principal.user_id,
-    )
-    return {"status": "queued", "agent_key": agent_key}
 
 
 @router.get("/workload", response_model=list[WorkloadOut])

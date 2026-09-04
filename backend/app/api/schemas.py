@@ -245,6 +245,7 @@ class AgentRunOut(BaseModel):
     started_at: datetime
     finished_at: datetime | None
     duration_ms: int | None
+    contracts_scanned: int
     suggestions_created: int
     suggestions_updated: int
     task: str | None
@@ -959,6 +960,33 @@ class AgentStatus(BaseModel):
     last_status: AgentRunStatus | None
     last_findings: int | None
     runs_failed_7d: int
+    alerts: list[str] = []
+
+
+class AgentInfoOut(BaseModel):
+    """ADR-0010: one agent as the administration screen sees it."""
+
+    agent_key: str
+    label: str
+    purpose: str
+    task: str | None
+    scope: str
+    trigger: str
+    cadence: str | None
+    event: str | None
+    enabled: bool
+    schedule_override: str | None
+    paused_by_name: str | None
+    paused_at: datetime | None
+    paused_reason: str | None
+    last_run: AgentRunOut | None
+    alerts: list[str]
+
+
+class AgentSettingsIn(BaseModel):
+    enabled: bool
+    reason: str | None = Field(default=None, max_length=500)
+    schedule_override: str | None = Field(default=None, max_length=100)
 
 
 class AiSpend(BaseModel):

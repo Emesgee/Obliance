@@ -66,6 +66,11 @@ class Settings(BaseSettings):
 
     # Background jobs: sync (test) · thread (dev, no Redis) · rq (staging/prod).
     jobs_mode: Literal["sync", "thread", "rq"] | None = None
+    job_timeout_seconds: int = 5400  # bidflow ADR-0026: 600 was too short for a real night
+    # Scheduler (ADR-0010 §1/§5): cadences are read in this zone; a nightly org run
+    # handles at most this many contracts and continues from a cursor the next night.
+    scheduler_timezone: str = "Europe/Copenhagen"
+    agent_contracts_per_run: int = 500
 
     @property
     def jobs_mode_effective(self) -> str:

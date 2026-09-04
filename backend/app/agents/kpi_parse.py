@@ -171,6 +171,10 @@ def _execute(s: Session, run: AgentRun, contract: Contract, versions: runtime.Ve
     run.suggestions_updated = updated
 
 
+EXECUTE = _execute  # the org runner (app/jobs/runs.py) drives agents generically
+DOC_TYPES = REPORT_DOC_TYPES
+
+
 def run_for_contract(
     *,
     org_id: uuid.UUID,

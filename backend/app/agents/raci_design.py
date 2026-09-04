@@ -24,6 +24,7 @@ from app.ai.store import add_citations
 from app.core import audit
 from app.core.auth import Principal
 from app.domain.models import (
+    AGREEMENT_DOC_TYPES,
     AgentRun,
     AgentTrigger,
     AiSuggestion,
@@ -188,6 +189,10 @@ def _execute(s: Session, run: AgentRun, contract: Contract, versions: runtime.Ve
         updated += int(not was_created)
     run.suggestions_created = created
     run.suggestions_updated = updated
+
+
+EXECUTE = _execute  # the org runner (app/jobs/runs.py) drives agents generically
+DOC_TYPES = AGREEMENT_DOC_TYPES
 
 
 def run_for_contract(

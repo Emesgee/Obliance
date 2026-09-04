@@ -150,6 +150,55 @@ def record_llm(run: AgentRun, result: llm.LlmResult[Any]) -> None:
         run.cost_dkk = (run.cost_dkk or 0) + result.cost_dkk
 
 
+@dataclass(slots=True)
+class Outcome:
+    """What one contract's execution amounted to — applied to the run row by the
+    caller, so the same code serves one-contract runs and the nightly org run."""
+
+    status: AgentRunStatus
+    error: str | None = None
+    reason: str | None = None
+
+
+def execute_one(
+    s: Session,
+    run: AgentRun,
+    spec: AgentSpec,
+    execute: Execute,
+    contract_id: uuid.UUID,
+    doc_types: frozenset[DocType],
+) -> Outcome:
+    """Run `execute` for one contract. Raises what the agent raises (the caller
+    decides whether that fails the run or just this contract)."""
+    contract = s.get(Contract, contract_id)
+    if contract is None:
+        return Outcome(AgentRunStatus.fejlet, "Kontrakten findes ikke")
+    versions = agreement_versions(s, contract_id, doc_types)
+    if not versions:
+        return Outcome(
+            AgentRunStatus.sprunget_over,
+            (
+                "Intet aftalegrundlag: upload en hovedkontrakt, et bilag eller et tillæg"
+                if doc_types == AGREEMENT_DOC_TYPES
+                else "Ingen indlæst rapport på kontrakten"
+            ),
+            "no_agreement_documents",
+        )
+    execute(s, run, contract, versions)
+    return Outcome(AgentRunStatus.ok)
+
+
+def is_disabled(s: Session, org_id: uuid.UUID, key: str) -> bool:
+    setting = s.get(AgentSetting, (org_id, key))
+    return setting is not None and not setting.enabled
+
+
+def finish(run: AgentRun, started: datetime) -> None:
+    finished = datetime.now(UTC)
+    run.finished_at = finished
+    run.duration_ms = int((finished - started).total_seconds() * 1000)
+
+
 def run_for_contract(
     spec: AgentSpec,
     execute: Execute,
@@ -176,7 +225,18 @@ def run_for_contract(
         s.add(run)
         s.commit()
         try:
-            _guarded(s, run, spec, execute, org_id, contract_id, doc_types)
+            if is_disabled(s, org_id, spec.key):
+                run.status = AgentRunStatus.sprunget_over
+                run.error_context = {"reason": "disabled"}
+            else:
+                out = execute_one(s, run, spec, execute, contract_id, doc_types)
+                run.contracts_scanned = 1
+                run.status = out.status
+                run.error = out.error
+                if out.reason:
+                    run.error_context = {"reason": out.reason}
+                if out.status == AgentRunStatus.ok:
+                    audit_completed(s, run, spec, contract_id)
         except llm.LlmBudgetExceeded as e:
             run.status = AgentRunStatus.sprunget_over
             run.error = str(e)
@@ -198,55 +258,30 @@ def run_for_contract(
                 agent_run_id=run.id,
             )
         finally:
-            finished = datetime.now(UTC)
-            run.finished_at = finished
-            run.duration_ms = int((finished - started).total_seconds() * 1000)
+            finish(run, started)
             s.commit()
         return run.id
 
 
-def _guarded(
-    s: Session,
-    run: AgentRun,
-    spec: AgentSpec,
-    execute: Execute,
-    org_id: uuid.UUID,
-    contract_id: uuid.UUID,
-    doc_types: frozenset[DocType],
+def audit_completed(
+    s: Session, run: AgentRun, spec: AgentSpec, contract_id: uuid.UUID | None
 ) -> None:
-    setting = s.get(AgentSetting, (org_id, spec.key))
-    if setting is not None and not setting.enabled:
-        run.status = AgentRunStatus.sprunget_over
-        run.error_context = {"reason": "disabled"}
-        return
-    contract = s.get(Contract, contract_id)
-    if contract is None:
-        run.status = AgentRunStatus.fejlet
-        run.error = "Kontrakten findes ikke"
-        return
-    versions = agreement_versions(s, contract_id, doc_types)
-    run.contracts_scanned = 1
-    if not versions:
-        run.status = AgentRunStatus.sprunget_over
-        run.error = (
-            "Intet aftalegrundlag: upload en hovedkontrakt, et bilag eller et tillæg"
-            if doc_types == AGREEMENT_DOC_TYPES
-            else "Ingen indlæst rapport på kontrakten"
-        )
-        run.error_context = {"reason": "no_agreement_documents"}
-        return
-    execute(s, run, contract, versions)
-    run.status = AgentRunStatus.ok
+    label = ""
+    if contract_id is not None:
+        contract = s.get(Contract, contract_id)
+        if contract is not None:
+            label = f"{contract.reference} {contract.name}"
     audit.record(
         s,
-        org_id=org_id,
+        org_id=run.organization_id,
         action=AuditAction.agent_run_completed,
         actor=audit.agent(spec.label),
         object_kind="agent_run",
         object_id=run.id,
-        object_label=f"{contract.reference} {contract.name}",
+        object_label=label,
         contract_id=contract_id,
         details={
+            "contracts_scanned": run.contracts_scanned,
             "suggestions_created": run.suggestions_created,
             "suggestions_updated": run.suggestions_updated,
         },

@@ -61,6 +61,7 @@ from app.domain.models import (
     risk_level_for,
 )
 from app.finance import kpi_status
+from app.jobs import alerts
 
 router = APIRouter(prefix="/api", tags=["dashboard"])
 
@@ -269,6 +270,7 @@ def dashboard(
 
     # ---- agents (ADR-0010 §2/§3) -----------------------------------------------------------
     settings_by_key = {s.agent_key: s for s in session.scalars(select(AgentSetting)).all()}
+    found = alerts.evaluate(session, principal.org_id)
     agents: list[AgentStatus] = []
     for key, mod in AGENTS.items():
         last = session.scalars(
@@ -289,6 +291,7 @@ def dashboard(
                 if last
                 else None,
                 runs_failed_7d=sum(1 for r in failed_runs if r.agent_key == key),
+                alerts=[a.message for a in found if a.agent_key == key],
             )
         )
 

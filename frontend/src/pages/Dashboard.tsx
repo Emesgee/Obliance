@@ -127,7 +127,7 @@ export default function Dashboard() {
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <section className="rounded-cc border border-line bg-card lg:col-span-2">
-          <h2 className="border-b border-line px-4 py-3 text-sm font-semibold uppercase tracking-wider text-muted">AI-agenter</h2>
+          <h2 className="flex items-baseline justify-between border-b border-line px-4 py-3 text-sm font-semibold uppercase tracking-wider text-muted">AI-agenter{me?.permissions.includes("agenter") && <Link to="/agents" className="text-xs font-normal normal-case tracking-normal text-accent">Administrér</Link>}</h2>
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-line text-left text-xs uppercase tracking-wider text-muted">
@@ -137,7 +137,7 @@ export default function Dashboard() {
             <tbody>
               {d.agents.map((a) => (
                 <tr key={a.agent_key} className="border-b border-line last:border-0">
-                  <td className="px-4 py-2 font-medium">{a.label}</td>
+                  <td className="px-4 py-2 font-medium">{a.label}{a.alerts.length > 0 && <span className="ml-2 text-xs text-crit" title={a.alerts.join(" · ")}>⚠ {a.alerts.length}</span>}</td>
                   <td className="px-4 py-2">
                     <span className={`pill ${!a.enabled ? "bg-none-bg text-none" : a.last_status === "fejlet" ? "bg-crit-bg text-crit" : "bg-ok-bg text-ok"}`}>
                       {!a.enabled ? "Pauset" : a.last_status === "fejlet" ? "Fejlet" : "Aktiv"}

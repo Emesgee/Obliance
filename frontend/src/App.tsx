@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from "./auth";
 import ContractDetail from "./pages/ContractDetail";
 import Contracts from "./pages/Contracts";
 import Dashboard from "./pages/Dashboard";
+import Agents from "./pages/Agents";
 import Economy from "./pages/Economy";
 import Login from "./pages/Login";
 
@@ -18,14 +19,16 @@ function RequireAuth() {
 }
 
 function Shell() {
-  const { me, logout } = useAuth();
+  const { me, logout, can } = useAuth();
+  const nav: [string, string][] = [["/", "Overblik"], ["/contracts", "Kontrakter"], ["/economy", "Økonomi"]];
+  if (can("agenter")) nav.push(["/agents", "Agenter"]);
   return (
     <div className="min-h-screen bg-bg text-ink">
       <header className="flex items-center justify-between border-b border-line bg-card px-6 py-3">
         <div className="flex items-baseline gap-5">
           <span className="text-lg font-bold tracking-tight text-navy">Obliance</span>
           <nav className="flex gap-4 text-sm">
-            {[["/", "Overblik"], ["/contracts", "Kontrakter"], ["/economy", "Økonomi"]].map(([to, label]) => (
+            {nav.map(([to, label]) => (
               <NavLink key={to} to={to} end={to === "/"} className={({ isActive }) => (isActive ? "font-semibold text-accent" : "text-slate hover:text-ink")}>
                 {label}
               </NavLink>
@@ -60,6 +63,7 @@ export default function App() {
             <Route path="/contracts" element={<Contracts />} />
             <Route path="/contracts/:id" element={<ContractDetail />} />
             <Route path="/economy" element={<Economy />} />
+            <Route path="/agents" element={<Agents />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Route>

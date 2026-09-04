@@ -191,6 +191,7 @@ export type AgentRun = {
   started_at: string;
   finished_at: string | null;
   duration_ms: number | null;
+  contracts_scanned: number;
   suggestions_created: number;
   suggestions_updated: number;
   task: string | null;
@@ -198,6 +199,25 @@ export type AgentRun = {
   output_tokens: number | null;
   cost_dkk: string | null;
   error: string | null;
+};
+
+// ADR-0010: the AI-agenter screen
+export type AgentInfo = {
+  agent_key: string;
+  label: string;
+  purpose: string;
+  task: string | null;
+  scope: "contract" | "org";
+  trigger: "schedule" | "event" | "both";
+  cadence: string | null;
+  event: string | null;
+  enabled: boolean;
+  schedule_override: string | null;
+  paused_by_name: string | null;
+  paused_at: string | null;
+  paused_reason: string | null;
+  last_run: AgentRun | null;
+  alerts: string[];
 };
 
 export type BulkApproveOut = { approved: string[]; failed: { id: string; code: string; error: string }[] };
@@ -529,6 +549,7 @@ export type Dashboard = {
     last_status: "koerer" | "ok" | "fejlet" | "sprunget_over" | null;
     last_findings: number | null;
     runs_failed_7d: number;
+    alerts: string[];
   }[];
   portfolio_annual_value: string | null;
   ai_spend: { month_dkk: string; month_usd: string; by_task: Record<string, string> } | null;

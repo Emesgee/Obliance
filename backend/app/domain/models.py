@@ -517,6 +517,8 @@ class AuditAction(enum.StrEnum):
     contract_role_assigned = "contract_role_assigned"
     task_created = "task_created"
     task_updated = "task_updated"
+    # added in migration 0010 (ADR-0010 §2)
+    agent_settings_changed = "agent_settings_changed"
 
 
 class SuggestionKind(enum.StrEnum):
