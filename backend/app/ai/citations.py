@@ -55,9 +55,9 @@ def _clause_at(clauses: Sequence[Clause], page: int, pos: int | None) -> str | N
     if not on_page:
         return None
     if pos is None:
-        return on_page[0].clause_ref
+        return None  # overlap fallback: page known, position not — no guessing (ADR-0005 §3)
     before = [c for c in on_page if c.char_start <= pos]
-    return (before[-1] if before else on_page[0]).clause_ref
+    return before[-1].clause_ref if before else None  # text above the first heading has no clause
 
 
 def locate(

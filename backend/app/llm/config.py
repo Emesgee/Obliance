@@ -20,7 +20,7 @@ Effort = Literal["low", "medium", "high", "xhigh", "max"]
 
 OPUS = "claude-opus-5"
 SONNET = "claude-sonnet-5"
-HAIKU = "claude-haiku-4-5-20251001"
+HAIKU = "claude-haiku-4-5"
 
 
 @dataclass(frozen=True, slots=True)

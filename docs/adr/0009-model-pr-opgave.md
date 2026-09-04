@@ -218,6 +218,7 @@ Tabellen i §1 findes som `backend/app/llm/config.py` (`TASKS`, `PRICES`, `resol
 `LLM_MODEL_<TASK>`-overstyring); gate G-04 håndhæver, at intet model-id står andre
 steder. `contract_intake` er første opgave i drift; effort sendes som
 `output_config.effort` med `thinking: adaptive`, og adapteren prøver én gang uden
-effort/thinking, hvis en model afviser parametrene. Prompt caching er sat på
+effort/thinking, hvis en model afviser parametrene. Serverside fallbacks (§5) er slået til på
+`anthropic`-backenden (`fallbacks: "default"`, kategori-routet af udbyderen). Prompt caching er sat på
 materialeblokken (§4); batch og embeddings er ikke bygget endnu (venter på worker,
 ADR-0010, og på den målte embedding-sammenligning i §2).

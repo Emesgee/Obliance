@@ -110,17 +110,26 @@ class AnthropicProvider:
             params["output_config"] = output_config
         if self.name == "anthropic":
             params["inference_geo"] = settings.llm_inference_geo
+            # ADR-0009 §5: a policy decline is re-run server-side on Anthropic's
+            # category-routed fallback instead of failing the run. Beta, first-party only.
+            params["betas"] = ["server-side-fallback-2026-07-01"]
+            params["fallbacks"] = "default"
         return params
+
+    def _create(self, params: dict[str, Any]) -> Any:
+        if "betas" in params:
+            return self._client.beta.messages.create(**params)
+        return self._client.messages.create(**params)
 
     def complete(self, req: ProviderRequest) -> ProviderResponse:
         try:
             try:
-                msg = self._client.messages.create(**self._params(req, with_effort=True))
+                msg = self._create(self._params(req, with_effort=True))
             except anthropic.BadRequestError as e:
                 # A model without adaptive thinking / effort: retry once without them.
                 if "effort" not in str(e) and "thinking" not in str(e):
                     raise
-                msg = self._client.messages.create(**self._params(req, with_effort=False))
+                msg = self._create(self._params(req, with_effort=False))
         except anthropic.APIError as e:
             raise LlmProviderError(f"{self.name}: {e.__class__.__name__}: {e}") from e
         text = "".join(getattr(block, "text", "") for block in msg.content if block.type == "text")
