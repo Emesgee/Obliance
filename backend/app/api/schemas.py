@@ -464,3 +464,70 @@ class RiskPatch(BaseModel):
     note: str | None = None
     responsible_id: uuid.UUID | None = None
     status: RiskStatus | None = None
+
+
+# ---- dashboard (ADR-0001 §Overblik: a roll-up, nothing stored) ------------------------------
+
+
+class DashboardCounts(BaseModel):
+    contracts_total: int
+    contracts_active: int
+    contracts_draft: int
+    contracts_fortrolig: int
+    obligations_open: int
+    obligations_overdue: int
+    risks_open: int
+    risks_high: int
+    suggestions_open: int
+    agent_runs_failed_7d: int
+
+
+class ActionItem(BaseModel):
+    suggestion_id: uuid.UUID
+    contract_id: uuid.UUID
+    contract_ref: str
+    contract_name: str
+    subject_kind: SuggestionSubject
+    title: str
+    confidence: Confidence
+    agent_key: str
+    created_at: datetime
+    can_decide: bool
+
+
+class DeadlineItem(BaseModel):
+    kind: str  # opsigelse · udloeb · forpligtelse · risiko (ADR-0017 §1 subset)
+    contract_id: uuid.UUID
+    contract_ref: str
+    contract_name: str
+    label: str
+    due_date: date
+    days_left: int  # negative = overdue
+    severity: str  # lav · mellem · hoej
+    subject_id: uuid.UUID | None
+
+
+class AgentStatus(BaseModel):
+    agent_key: str
+    label: str
+    enabled: bool
+    last_run_at: datetime | None
+    last_status: AgentRunStatus | None
+    last_findings: int | None
+    runs_failed_7d: int
+
+
+class AiSpend(BaseModel):
+    month_dkk: Decimal
+    month_usd: Decimal
+    by_task: dict[str, Decimal]
+
+
+class DashboardOut(BaseModel):
+    counts: DashboardCounts
+    actions: list[ActionItem]
+    deadlines: list[DeadlineItem]
+    agents: list[AgentStatus]
+    portfolio_annual_value: Decimal | None  # None without okonomi (ADR-0003 §2)
+    ai_spend: AiSpend | None  # None without okonomi (ADR-0014 §4)
+    window_days: int

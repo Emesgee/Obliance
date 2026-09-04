@@ -224,3 +224,13 @@ flowchart LR
 3. **`moede`-frister vækker Meeting Preparation Agent** (ADR-0010's hændelsesdrevne
    kørsel) 14 dage før, så agendaudkastet ligger klar. Det er formålet med, at governance
    blev struktureret i ADR-0001.
+
+## Implementeringsnote (2026-09-04, første udsnit)
+
+Fristkøen fra §1 findes som afledt forespørgsel i `GET /api/dashboard` med fire af de ti
+`kind`-værdier: `opsigelse` (`last_termination_date`), `udloeb` (`end_date`),
+`forpligtelse` (åbne forpligtelsers `deadline`) og `risiko`. `severity` udledes af
+kontraktens niveau (N1/N2 → høj) og forpligtelsens kritikalitet. Intet gemmes; en
+ændret dato på kilden ændrer fristen næste gang, den læses. Varslingsvinduer,
+notifikationer, eskalering og de øvrige kinds (option, møde, certifikat, opgave,
+signatur, forslag, opbevaring) er ikke bygget.

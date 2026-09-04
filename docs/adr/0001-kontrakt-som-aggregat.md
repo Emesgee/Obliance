@@ -167,3 +167,13 @@ med børn slettes ikke, den arkiveres (opbevaringspolitik kommer i egen ADR, N10
 3. **Governance struktureret fra start** (`governance_meetings` JSONB + `governance_note`),
    jf. afsnittet ovenfor. Anbefalet; sættes til Accepted sammen med resten, medmindre
    der er indvendinger.
+
+## Implementeringsnote (2026-09-04)
+
+Overblikket er bygget som ren roll-up i `GET /api/dashboard` (bidflow ADR-0040): ingen
+dashboard-tabeller, alle tal beregnes ved læsning over det, RLS lader kalderen se.
+Afledte felter gemmes ikke: `forsinket` på forpligtelser, score/niveau på risici og
+fristkøen beregnes i kode. Beløb (porteføljens årlige værdi, AI-forbrug) er fraværende,
+ikke nul, uden `okonomi` (ADR-0003 §2). Børn bygget indtil nu: `contract_documents`,
+`obligations`, `risks`, `citations`; `kpis`, `sla_breaches`, `invoices`, `tasks` og
+`raci_entries` venter.

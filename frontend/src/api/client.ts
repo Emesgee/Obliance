@@ -244,6 +244,58 @@ export type Obligation = {
   source_stale: boolean;
 };
 
+// ---- dashboard (ADR-0001 §Overblik) ----------------------------------------------
+
+export type Dashboard = {
+  counts: {
+    contracts_total: number;
+    contracts_active: number;
+    contracts_draft: number;
+    contracts_fortrolig: number;
+    obligations_open: number;
+    obligations_overdue: number;
+    risks_open: number;
+    risks_high: number;
+    suggestions_open: number;
+    agent_runs_failed_7d: number;
+  };
+  actions: {
+    suggestion_id: string;
+    contract_id: string;
+    contract_ref: string;
+    contract_name: string;
+    subject_kind: string;
+    title: string;
+    confidence: "hoej" | "mellem" | "lav";
+    agent_key: string;
+    created_at: string;
+    can_decide: boolean;
+  }[];
+  deadlines: {
+    kind: string;
+    contract_id: string;
+    contract_ref: string;
+    contract_name: string;
+    label: string;
+    due_date: string;
+    days_left: number;
+    severity: "lav" | "mellem" | "hoej";
+    subject_id: string | null;
+  }[];
+  agents: {
+    agent_key: string;
+    label: string;
+    enabled: boolean;
+    last_run_at: string | null;
+    last_status: "koerer" | "ok" | "fejlet" | "sprunget_over" | null;
+    last_findings: number | null;
+    runs_failed_7d: number;
+  }[];
+  portfolio_annual_value: string | null;
+  ai_spend: { month_dkk: string; month_usd: string; by_task: Record<string, string> } | null;
+  window_days: number;
+};
+
 export type AuditEntry = {
   id: string;
   occurred_at: string;

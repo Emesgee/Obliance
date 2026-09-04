@@ -13,6 +13,7 @@ from app import agents
 from app.api import ai as ai_api
 from app.api import auth as auth_api
 from app.api import contracts as contracts_api
+from app.api import dashboard as dashboard_api
 from app.api import documents as documents_api
 from app.api import obligations as obligations_api
 from app.api import risks as risks_api
@@ -32,6 +33,7 @@ def create_app() -> FastAPI:
     app.include_router(documents_api.router)
     app.include_router(obligations_api.router)
     app.include_router(risks_api.router)
+    app.include_router(dashboard_api.router)
     app.include_router(ai_api.router)
     agents.register()  # ADR-0006 §3 listeners: expire suggestions, run intake
 

@@ -1,7 +1,8 @@
-import { Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
+import { Navigate, NavLink, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "./auth";
 import ContractDetail from "./pages/ContractDetail";
 import Contracts from "./pages/Contracts";
+import Dashboard from "./pages/Dashboard";
 import Login from "./pages/Login";
 
 // Shell (ADR-0024 increment 1). No colour literal anywhere — every colour is a
@@ -20,8 +21,15 @@ function Shell() {
   return (
     <div className="min-h-screen bg-bg text-ink">
       <header className="flex items-center justify-between border-b border-line bg-card px-6 py-3">
-        <div className="flex items-baseline gap-3">
+        <div className="flex items-baseline gap-5">
           <span className="text-lg font-bold tracking-tight text-navy">Obliance</span>
+          <nav className="flex gap-4 text-sm">
+            {[["/", "Overblik"], ["/contracts", "Kontrakter"]].map(([to, label]) => (
+              <NavLink key={to} to={to} end={to === "/"} className={({ isActive }) => (isActive ? "font-semibold text-accent" : "text-slate hover:text-ink")}>
+                {label}
+              </NavLink>
+            ))}
+          </nav>
           <span className="font-mono text-xs uppercase tracking-wider text-muted">{me?.org_name}</span>
         </div>
         <div className="flex items-center gap-3 text-sm">
@@ -47,7 +55,8 @@ export default function App() {
         <Route path="/login" element={<Login />} />
         <Route element={<RequireAuth />}>
           <Route element={<Shell />}>
-            <Route index element={<Contracts />} />
+            <Route index element={<Dashboard />} />
+            <Route path="/contracts" element={<Contracts />} />
             <Route path="/contracts/:id" element={<ContractDetail />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>

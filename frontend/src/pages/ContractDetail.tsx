@@ -516,7 +516,7 @@ export default function ContractDetail() {
 
   return (
     <section>
-      <p className="mb-2 text-sm"><Link to="/" className="text-accent underline">← Kontrakter</Link></p>
+      <p className="mb-2 text-sm"><Link to="/contracts" className="text-accent underline">← Kontrakter</Link></p>
       <div className="mb-4 flex flex-wrap items-baseline gap-3">
         <h1 className="text-2xl font-bold tracking-tight">{c.name}</h1>
         <span className="font-mono text-sm text-muted">{c.reference}</span>
