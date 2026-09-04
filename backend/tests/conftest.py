@@ -114,12 +114,21 @@ def Session_(
             text(
                 "SELECT tablename FROM pg_tables "
                 "WHERE schemaname='public' "
-                "AND tablename NOT IN ('alembic_version', 'role_permissions', 'raci_templates')"  # seeded reference data
+                "AND tablename NOT IN ('alembic_version', 'role_permissions')"  # seeded reference data
             )
         ).fetchall()
         tables = ", ".join(f'"{r[0]}"' for r in rows)
         if tables:
             conn.execute(text(f"TRUNCATE {tables} CASCADE"))
+            # organizations CASCADEs into raci_templates: re-seed the global rows
+            from app.raci.templates import insert_statements
+
+            # FORCE RLS binds the owner too; lift it for the seed, as the migration did
+            conn.execute(text("ALTER TABLE raci_templates NO FORCE ROW LEVEL SECURITY"))
+            conn.execute(text("DELETE FROM raci_templates WHERE organization_id IS NULL"))
+            for stmt in insert_statements():
+                conn.execute(text(stmt))
+            conn.execute(text("ALTER TABLE raci_templates FORCE ROW LEVEL SECURITY"))
 
 
 # ---- seeding helpers (identity tables have no RLS; contracts are seeded in

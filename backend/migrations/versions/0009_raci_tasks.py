@@ -39,67 +39,6 @@ def _contract_scope(table: str, nullable: bool = False) -> None:
     )
 
 
-TEMPLATES = [
-    # key, tiers, forms, name, criticality, assignments
-    (
-        "sla_followup",
-        ["N1", "N2"],
-        [],
-        "Følge op på leveringsgrad og SLA",
-        "hoej",
-        {"CM": "A", "BUS": "R", "IT": "C", "LEV": "I"},
-    ),
-    (
-        "penalty",
-        ["N1", "N2"],
-        [],
-        "Beregne og fremsætte bod eller service credit ved leverancesvigt",
-        "hoej",
-        {"CO": "A", "FIN": "R", "LEGAL": "C", "CM": "C", "LEV": "I"},
-    ),
-    (
-        "invoice_control",
-        [],
-        [],
-        "Fakturakontrol mod prisbilag",
-        "mellem",
-        {"FIN": "A", "FIN_R": "R"},
-    ),
-    (
-        "renewal",
-        ["N1", "N2", "N3"],
-        ["rammeaftale", "serviceaftale"],
-        "Beslutte forlængelse eller genudbud",
-        "hoej",
-        {"CO": "A", "PROC": "R", "LEGAL": "C", "CM": "C"},
-    ),
-    (
-        "supplier_meetings",
-        [],
-        [],
-        "Afholde og dokumentere leverandørmøder",
-        "mellem",
-        {"CM": "A", "CM_R": "R", "LEV": "R", "BUS": "I"},
-    ),
-    (
-        "ai_review",
-        [],
-        [],
-        "Godkende AI-udtræk af forpligtelser og risici",
-        "mellem",
-        {"CM": "A", "LEGAL": "R", "CO": "I"},
-    ),
-    (
-        "dpa",
-        [],
-        ["databehandleraftale", "serviceaftale"],
-        "Kontrollere databehandleraftale og underdatabehandlere",
-        "hoej",
-        {"LEGAL": "A", "IT": "R", "CM": "C", "LEV": "I"},
-    ),
-]
-
-
 def upgrade() -> None:
     op.execute(
         "CREATE TYPE raci_function AS ENUM ('CM','CO','PROC','LEGAL','FIN','IT','BUS','LEV')"
@@ -190,24 +129,10 @@ def upgrade() -> None:
     )
     # Seed the global templates BEFORE row-level security: FORCE applies to the owner
     # too, and the policy's WITH CHECK refuses NULL organization_id.
-    import json
+    from app.raci.templates import insert_statements
 
-    for key, tiers, forms, name, crit, assignments in TEMPLATES:
-        cells = {
-            k.replace("_R", ""): v for k, v in assignments.items()
-        }  # FIN_R → FIN=R only if no A
-        clean = {}
-        for k, v in assignments.items():
-            fn = k.replace("_R", "")
-            if fn in clean and clean[fn] == "A":
-                continue
-            clean[fn] = v
-        op.execute(
-            "INSERT INTO raci_templates (organization_id, key, tiers, agreement_forms, name, criticality, assignments) "
-            f"VALUES (NULL, '{key}', '{json.dumps(tiers)}'::jsonb, '{json.dumps(forms)}'::jsonb, "
-            f"'{name.replace(chr(39), chr(39) * 2)}', '{crit}', '{json.dumps(clean)}'::jsonb)"
-        )
-        _ = cells
+    for stmt in insert_statements():
+        op.execute(stmt)
 
     op.execute(
         """
