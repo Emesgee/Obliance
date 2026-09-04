@@ -24,8 +24,9 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app import llm
-from app.agents import runtime
+from app.agents import runtime, sla_terms
 from app.ai import citations, suggestions
+from app.ai.store import add_citations
 from app.core import audit
 from app.core.auth import Principal
 from app.domain.models import (
@@ -33,8 +34,6 @@ from app.domain.models import (
     AgentTrigger,
     AiSuggestion,
     AuditAction,
-    Citation,
-    CitationKind,
     Confidence,
     Contract,
     Criticality,
@@ -97,6 +96,12 @@ class ExtractOutput(BaseModel):
     obligations: list[ObligationItem] = Field(
         description="Alle forpligtelser i materialet, én pr. selvstændig pligt"
     )
+    kpis: list[sla_terms.KpiItem] = Field(
+        description="Målbare mål (KPI/SLA) med operator, værdi, enhed og periode; tom liste hvis ingen"
+    )
+    penalty_terms: list[sla_terms.PenaltyTermItem] = Field(
+        description="Bods- og service credit-klausuler som strukturerede parametre; udelad klausuler, der ikke kan udtrykkes i felterne, og nævn dem i rationale"
+    )
     rationale: str = Field(
         description="Kort begrundelse på dansk: hvad var entydigt, hvad er fortolket, hvad blev udeladt og hvorfor"
     )
@@ -112,6 +117,8 @@ Regler:
 4. Beregn aldrig datoer eller beløb. deadline udfyldes kun, når en konkret dato står i materialet.
 5. Hellere én forpligtelse for meget end én for lidt — en overset forpligtelse koster mere end en afvist. Sæt confidence lavere, når du er i tvivl.
 6. Skriv titler, beskrivelser og rationale på dansk, neutralt og kort.
+7. Udtræk desuden målbare mål (KPI/SLA): navn, operator, værdi, enhed og måleperiode, med citat af den klausul, målet står i. "≥ 99,8 % pr. måned" er operator gte, værdi 99.8, enhed pct, periode maaned.
+8. Udtræk bods- og service credit-klausuler som parametre: type, sats (som decimalbrøk, 5 % = 0.05), beregningsbasis, tidsenhed, evt. trappe og loft, samt hvilket mål klausulen knytter sig til. Kan en klausul ikke udtrykkes i felterne, så udelad den og skriv det i rationale — gæt aldrig.
 """
 
 QUESTION = "Udtræk alle forpligtelser i materialet ovenfor i det angivne JSON-skema."
@@ -179,8 +186,19 @@ def _execute(s: Session, run: AgentRun, contract: Contract, versions: runtime.Ve
         )
         created += int(was_created)
         updated += int(not was_created)
-    run.suggestions_created = created
-    run.suggestions_updated = updated
+    c2, u2 = sla_terms.emit(
+        s,
+        run=run,
+        contract=contract,
+        verifier=verifier,
+        agent_key=AGENT_KEY,
+        agent_label=LABEL,
+        kpis=result.data.kpis,
+        terms=result.data.penalty_terms,
+        rationale=result.data.rationale,
+    )
+    run.suggestions_created = created + c2
+    run.suggestions_updated = updated + u2
 
 
 def run_for_contract(
@@ -217,41 +235,6 @@ def next_seq(session: Session, contract_id: uuid.UUID) -> int:
         )
         + 1
     )
-
-
-def add_citations(
-    session: Session,
-    *,
-    subject_kind: str,
-    subject_id: uuid.UUID,
-    org_id: uuid.UUID,
-    contract_id: uuid.UUID,
-    cites: list[dict[str, Any]],
-) -> list[Citation]:
-    rows: list[Citation] = []
-    for c in cites:
-        if c.get("kind", "document") != "document" or not c.get("document_version_id"):
-            continue
-        row = Citation(
-            organization_id=org_id,
-            contract_id=contract_id,
-            subject_kind=subject_kind,
-            subject_id=subject_id,
-            kind=CitationKind.document,
-            document_id=uuid.UUID(c["document_id"]) if c.get("document_id") else None,
-            document_version_id=uuid.UUID(c["document_version_id"]),
-            page_pdf=c.get("page_pdf"),
-            page_printed=c.get("page_printed"),
-            clause_ref=c.get("clause_ref"),
-            quote=c.get("quote"),
-            quote_hash=citations.quote_hash(c.get("quote") or ""),
-            verified=bool(c.get("verified")),
-            label=c.get("label") or "",
-        )
-        session.add(row)
-        rows.append(row)
-    session.flush()
-    return rows
 
 
 def _parse_date(v: Any) -> date | None:

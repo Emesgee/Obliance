@@ -39,11 +39,16 @@ from app.domain.models import (
     AgentRunStatus,
     AgentSetting,
     AiSuggestion,
+    ClaimStatus,
+    Confidence,
     Confidentiality,
     Contract,
     ContractStatus,
     ContractTier,
     Criticality,
+    FinancialClaim,
+    Kpi,
+    KpiMeasurement,
     Obligation,
     ObligationStatus,
     Risk,
@@ -52,6 +57,7 @@ from app.domain.models import (
     UsageEvent,
     risk_level_for,
 )
+from app.finance import kpi_status
 
 router = APIRouter(prefix="/api", tags=["dashboard"])
 
@@ -99,8 +105,35 @@ def dashboard(
             AgentRun.status == AgentRunStatus.fejlet, AgentRun.started_at >= week_ago
         )
     ).all()
+    kpis = session.scalars(select(Kpi).where(Kpi.active.is_(True))).all()
+    kpis_gray = 0
+    for k in kpis:
+        live = session.scalars(
+            select(KpiMeasurement)
+            .where(KpiMeasurement.kpi_id == k.id, KpiMeasurement.superseded_by_id.is_(None))
+            .order_by(KpiMeasurement.period_start.desc())
+            .limit(1)
+        ).first()
+        st = kpi_status.evaluate(
+            period=k.period.value,
+            operator=k.target_operator.value,
+            target=k.target_value,
+            high=k.target_value_high,
+            warn_band=k.warn_band,
+            latest=kpi_status.Measurement(live.period_start, live.value) if live else None,
+            today=today,
+        )
+        kpis_gray += st.color == "graa"
+    pending_claims = session.scalars(
+        select(FinancialClaim)
+        .where(FinancialClaim.status.in_((ClaimStatus.beregnet, ClaimStatus.afventer_2_signatur)))
+        .order_by(FinancialClaim.created_at.desc())
+    ).all()
     counts = DashboardCounts(
         contracts_total=len(contracts),
+        kpis_total=len(kpis),
+        kpis_gray=kpis_gray,
+        claims_pending=len(pending_claims),
         contracts_active=sum(1 for c in contracts.values() if c.status == ContractStatus.aktiv),
         contracts_draft=sum(1 for c in contracts.values() if c.status == ContractStatus.kladde),
         contracts_fortrolig=sum(
@@ -139,6 +172,29 @@ def dashboard(
         )
         for s in open_suggestions[:100]
     ]
+    # ADR-0013 §4: a computed claim is "kræver handling" too — for okonomi
+    if principal.can(access.OKONOMI):
+        actions += [
+            ActionItem(
+                suggestion_id=c.id,
+                kind="claim",
+                contract_id=c.contract_id,
+                contract_ref=contracts[c.contract_id].reference
+                if c.contract_id in contracts
+                else "",
+                contract_name=contracts[c.contract_id].name if c.contract_id in contracts else "",
+                subject_kind=SuggestionSubject.sla_breach,
+                title=f"KR-{c.seq} {c.claim_type.value} · {c.amount} kr."
+                + (
+                    " · afventer 2. signatur" if c.status == ClaimStatus.afventer_2_signatur else ""
+                ),
+                confidence=Confidence.hoej,
+                agent_key="system",
+                created_at=c.created_at,
+                can_decide=True,
+            )
+            for c in pending_claims[:50]
+        ]
 
     # ---- deadlines (ADR-0017 §1, derived) ---------------------------------------------------
     deadlines: list[DeadlineItem] = []

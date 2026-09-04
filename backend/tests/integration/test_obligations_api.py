@@ -112,6 +112,8 @@ def _obligations(doc_id: str) -> str:
                     conf="hoej",
                 ),
             ],
+            "kpis": [],
+            "penalty_terms": [],
             "rationale": "To pligter står ordret; boden er fortolket.",
         }
     )

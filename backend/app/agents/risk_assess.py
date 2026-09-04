@@ -22,8 +22,8 @@ from sqlalchemy.orm import Session
 
 from app import llm
 from app.agents import runtime
-from app.agents.obligation_extract import add_citations
 from app.ai import citations, suggestions
+from app.ai.store import add_citations
 from app.core import audit
 from app.core.auth import Principal
 from app.domain.models import (

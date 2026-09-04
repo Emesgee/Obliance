@@ -244,11 +244,115 @@ export type Obligation = {
   source_stale: boolean;
 };
 
+// ---- KPI / SLA, penalty terms, claims (ADR-0019, ADR-0013) ---------------------------
+
+export type Measurement = {
+  id: string;
+  kpi_id: string;
+  period_start: string;
+  period_end: string;
+  value: string;
+  source_kind: "manual" | "import" | "document" | "integration";
+  approved_at: string | null;
+  note: string | null;
+  supersedes_measurement_id: string | null;
+  superseded_by_id: string | null;
+  created_at: string;
+};
+
+export type Kpi = {
+  id: string;
+  contract_id: string;
+  seq: number;
+  ref: string;
+  name: string;
+  unit: "pct" | "antal" | "timer" | "dkk" | "score";
+  target_operator: "gte" | "lte" | "eq" | "between";
+  target_value: string;
+  target_value_high: string | null;
+  target_text: string;
+  period: "maaned" | "kvartal" | "halvaar" | "aar";
+  warn_band: string;
+  penalty_term_id: string | null;
+  measurement_obligation_id: string | null;
+  active: boolean;
+  origin: "human" | "ai";
+  status: { color: "groen" | "gul" | "roed" | "graa"; reason: string; measured_period_start: string | null; value: string | null };
+  measurements: Measurement[];
+  citations: CitationRow[];
+};
+
+export type PenaltyTerm = {
+  id: string;
+  contract_id: string;
+  seq: number;
+  ref: string;
+  name: string;
+  term_type: string;
+  trigger_description: string | null;
+  applies_to: string | null;
+  rate: string | null;
+  tiers: { below: string; rate: string }[] | null;
+  basis: string;
+  basis_amount: string | null;
+  time_unit: string;
+  cap_rate: string | null;
+  cap_amount: string | null;
+  status: "aktiv" | "kraever_godkendelse";
+  origin: "human" | "ai";
+  citations: CitationRow[];
+};
+
+export type SlaBreach = {
+  id: string;
+  kpi_id: string;
+  measurement_id: string;
+  period_start: string;
+  period_end: string;
+  target_value: string;
+  actual_value: string;
+  penalty_term_id: string | null;
+  claim_id: string | null;
+  note: string | null;
+};
+
+export type Claim = {
+  id: string;
+  contract_id: string;
+  seq: number;
+  ref: string;
+  claim_type: "service_credit" | "bod" | "prisafvigelse";
+  period_start: string | null;
+  period_end: string | null;
+  penalty_term_id: string | null;
+  breach_id: string | null;
+  amount: string | null;
+  amount_uncapped: string | null;
+  cap_applied: boolean;
+  basis_text: string | null;
+  formula_version: string;
+  status: "beregnet" | "afventer_2_signatur" | "godkendt" | "fremsat" | "modregnet" | "betalt" | "afvist_af_leverandoer" | "frafaldet";
+  requires_second_signature: boolean;
+  approved_by: string | null;
+  second_approved_by: string | null;
+  submitted_at: string | null;
+  decision_comment: string | null;
+  created_at: string;
+  citations: CitationRow[];
+};
+
+export type KpiPayload = { name: string; unit: string; target_operator: string; target_value: string; period: string; target_text: string };
+export type MeasurementPayload = { kpi_id: string; kpi_name: string; unit: string; period_start: string; period_end: string; value: string; target_text: string };
+export type PenaltyTermPayload = { name: string; term_type: string; trigger_description: string; applies_to: string | null; rate: string | null; basis: string; basis_amount: string | null; time_unit: string; cap_rate: string | null };
+
 // ---- dashboard (ADR-0001 §Overblik) ----------------------------------------------
 
 export type Dashboard = {
   counts: {
     contracts_total: number;
+    kpis_total: number;
+    kpis_gray: number;
+    claims_pending: number;
     contracts_active: number;
     contracts_draft: number;
     contracts_fortrolig: number;
@@ -261,6 +365,7 @@ export type Dashboard = {
   };
   actions: {
     suggestion_id: string;
+    kind: "suggestion" | "claim";
     contract_id: string;
     contract_ref: string;
     contract_name: string;

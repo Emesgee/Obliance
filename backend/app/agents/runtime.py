@@ -34,6 +34,7 @@ from app.domain.models import (
     AuditAction,
     Contract,
     ContractDocument,
+    DocType,
     DocumentClause,
     DocumentPage,
     DocumentVersion,
@@ -55,13 +56,16 @@ class AgentSpec:
 Execute = Callable[[Session, AgentRun, Contract, Versions], None]
 
 
-def agreement_versions(session: Session, contract_id: uuid.UUID) -> Versions:
-    """The current, ingested versions of the agreement documents (ADR-0006 §4)."""
+def agreement_versions(
+    session: Session, contract_id: uuid.UUID, doc_types: frozenset[DocType] = AGREEMENT_DOC_TYPES
+) -> Versions:
+    """The current, ingested versions of the agreement documents (ADR-0006 §4) —
+    or of another doc-type set, e.g. reports for kpi_parse."""
     docs = session.scalars(
         select(ContractDocument)
         .where(
             ContractDocument.contract_id == contract_id,
-            ContractDocument.doc_type.in_(list(AGREEMENT_DOC_TYPES)),
+            ContractDocument.doc_type.in_(list(doc_types)),
             ContractDocument.current_version_id.is_not(None),
         )
         .order_by(ContractDocument.created_at)
@@ -155,6 +159,7 @@ def run_for_contract(
     trigger: AgentTrigger,
     trigger_ref: str | None = None,
     triggered_by: uuid.UUID | None = None,
+    doc_types: frozenset[DocType] = AGREEMENT_DOC_TYPES,
 ) -> uuid.UUID:
     started = datetime.now(UTC)
     with tenant(org_id, system=True), SessionLocal() as s:
@@ -171,7 +176,7 @@ def run_for_contract(
         s.add(run)
         s.commit()
         try:
-            _guarded(s, run, spec, execute, org_id, contract_id)
+            _guarded(s, run, spec, execute, org_id, contract_id, doc_types)
         except llm.LlmBudgetExceeded as e:
             run.status = AgentRunStatus.sprunget_over
             run.error = str(e)
@@ -207,6 +212,7 @@ def _guarded(
     execute: Execute,
     org_id: uuid.UUID,
     contract_id: uuid.UUID,
+    doc_types: frozenset[DocType],
 ) -> None:
     setting = s.get(AgentSetting, (org_id, spec.key))
     if setting is not None and not setting.enabled:
@@ -218,11 +224,15 @@ def _guarded(
         run.status = AgentRunStatus.fejlet
         run.error = "Kontrakten findes ikke"
         return
-    versions = agreement_versions(s, contract_id)
+    versions = agreement_versions(s, contract_id, doc_types)
     run.contracts_scanned = 1
     if not versions:
         run.status = AgentRunStatus.sprunget_over
-        run.error = "Intet aftalegrundlag: upload en hovedkontrakt, et bilag eller et tillæg"
+        run.error = (
+            "Intet aftalegrundlag: upload en hovedkontrakt, et bilag eller et tillæg"
+            if doc_types == AGREEMENT_DOC_TYPES
+            else "Ingen indlæst rapport på kontrakten"
+        )
         run.error_context = {"reason": "no_agreement_documents"}
         return
     execute(s, run, contract, versions)

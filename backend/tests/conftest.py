@@ -34,6 +34,22 @@ TEST_URL = os.environ.setdefault(
     "TEST_DATABASE_URL",
     "postgresql+psycopg://obliance_app:obliance_app@127.0.0.1:5432/obliance_test",
 )
+
+
+def _guard_test_database(url: str, name: str) -> None:
+    """The suite DROPS SCHEMA and TRUNCATEs. It must never point at a database whose
+    name does not end in `_test` — a sourced backend/.env once leaked the dev URL in
+    here and wiped the development data (2026-09-04)."""
+    db = url.rsplit("/", 1)[-1].split("?")[0]
+    if not db.endswith("_test"):
+        raise SystemExit(
+            f"{name} points at database '{db}', which is not a *_test database. "
+            "Refusing to run: the suite drops and truncates everything it touches."
+        )
+
+
+_guard_test_database(MIGRATE_URL, "MIGRATE_DATABASE_URL")
+_guard_test_database(TEST_URL, "TEST_DATABASE_URL")
 os.environ["DATABASE_URL"] = TEST_URL
 os.environ.setdefault("APP_ENV", "test")
 # Auth (ADR-0024): a fixed test secret, and a login limit generous enough that the

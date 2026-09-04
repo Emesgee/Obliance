@@ -14,12 +14,13 @@ const dkTime = new Intl.DateTimeFormat("da-DK", { dateStyle: "short", timeStyle:
 
 const SUBJECT: Record<string, string> = {
   contract_intake: "Stamdata", obligation: "Forpligtelse", risk: "Risiko", raci_entry: "RACI",
-  invoice_finding: "Faktura", sla_breach: "SLA-brud", task: "Opgave",
+  invoice_finding: "Faktura", sla_breach: "SLA-brud", task: "Opgave", kpi: "KPI", kpi_measurement: "Måling",
+  penalty_term: "Bodsklausul",
 };
 const KIND: Record<string, string> = { opsigelse: "Opsigelse", udloeb: "Udløb", forpligtelse: "Forpligtelse", risiko: "Risiko" };
 const TASK: Record<string, string> = {
   contract_intake: "Contract Intake", obligation_extract: "Obligation Extraction", risk_assess: "Risk",
-  copilot: "Copilot",
+  kpi_parse: "KPI/SLA", copilot: "Copilot",
 };
 
 function Tile({ label, value, tone, to }: { label: string; value: string | number; tone?: "crit" | "warn" | "ok" | "accent"; to?: string }) {
@@ -71,7 +72,8 @@ export default function Dashboard() {
         <Tile label="Kræver handling" value={c.suggestions_open} tone={c.suggestions_open ? "accent" : undefined} />
         <Tile label="Forsinkede forpligtelser" value={c.obligations_overdue} tone={c.obligations_overdue ? "crit" : "ok"} />
         <Tile label="Åbne risici · høj" value={`${c.risks_open} · ${c.risks_high}`} tone={c.risks_high ? "warn" : undefined} />
-        <Tile label="Kladder" value={c.contracts_draft} />
+        <Tile label="KPI'er uden data" value={`${c.kpis_gray} af ${c.kpis_total}`} tone={c.kpis_gray ? "warn" : undefined} />
+        <Tile label="Krav til godkendelse" value={c.claims_pending} tone={c.claims_pending ? "accent" : undefined} />
         <Tile label="Årlig værdi" value={d.portfolio_annual_value === null ? "—" : dkk.format(Number(d.portfolio_annual_value))} />
       </div>
 
@@ -85,7 +87,7 @@ export default function Dashboard() {
               {d.actions.slice(0, 12).map((a) => (
                 <li key={a.suggestion_id} className="border-b border-line px-4 py-2 last:border-0">
                   <Link to={`/contracts/${a.contract_id}`} className="flex items-center gap-2 text-sm hover:text-accent">
-                    <span className="pill bg-blue-bg text-accent">{SUBJECT[a.subject_kind] ?? a.subject_kind}</span>
+                    <span className={`pill ${a.kind === "claim" ? "bg-warn-bg text-warn" : "bg-blue-bg text-accent"}`}>{a.kind === "claim" ? "Krav" : SUBJECT[a.subject_kind] ?? a.subject_kind}</span>
                     <span className="min-w-0 flex-1 truncate">{a.title}</span>
                     <span className="font-mono text-xs text-muted">{a.contract_ref}</span>
                     <ConfPill v={a.confidence} />

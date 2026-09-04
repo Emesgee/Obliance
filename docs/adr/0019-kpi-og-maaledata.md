@@ -186,3 +186,18 @@ ADR-0013 med ét ekstra felt foran. Vurderet og fravalgt.
 3. **En erstattet måling frafalder ikke automatisk et `fremsat` krav.** Et fremsat krav
    er ude af huset (ADR-0013); systemet opretter en opgave "grundlaget for krav X er
    ændret", og et menneske frafalder.
+
+## Implementeringsnote (2026-09-04, første increment)
+
+Bygget: `kpis` og `kpi_measurements` (migration 0007) som §1/§2 foreskriver — målet er
+operator + værdi + enhed + periode, målingen er et faktum om en periode med præcis én
+levende række pr. (kpi, periode) og erstatning med begrundelse; status beregnes i
+`app/finance/kpi_status.py` efter §3's fem regler med grå som første; `warn_band` default
+1 procentpoint (afklaring 1). Veje ind: `manual` (kontrakt_red/okonomi, direkte) og
+`document` (KPI/SLA Agent læser en rapport, `kpi_parse` på Haiku, og foreslår målinger,
+som `hitl` godkender). Godkendelse sammenligner i kode og skriver `sla_breaches` og et
+`beregnet` krav i samme transaktion (§5); uden godkendte parametre står bruddet med en
+note. En erstattet måling frafalder et åbent krav og lader et fremsat stå med en note
+(afklaring 3). Ikke bygget: `import` (CSV/Excel) og `integration`, `measurement_
+obligation_id`-koblingen til forpligtelser i UI'et, grafen (§6) — historikken vises som
+liste.

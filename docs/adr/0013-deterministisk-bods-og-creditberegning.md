@@ -230,3 +230,19 @@ flowchart TB
    internt" og "sendt til leverandøren" må aldrig være samme klik.
 3. **Beregningen kører automatisk**, når en måling godkendes, og opretter et `beregnet`
    krav. Et SLA-brud, ingen opdager, er præcis det, produktet sælges på at fange.
+
+## Implementeringsnote (2026-09-04, første increment)
+
+Bygget: `penalty_terms` (migration 0007) med enum'erne fra §1 (`term_type`, `basis`,
+`time_unit`), foreslået af Obligation Extraction Agent i samme kørsel som forpligtelser og
+godkendt af `okonomi`; `app/finance/penalties.py` med én ren funktion pr. `term_type`
+(`service_credit_pct_of_fee`, `service_credit_tiered`, `delivery_penalty_per_week`,
+`fixed_penalty_per_breach`) og `price_deviation` til fakturalinjer, alle `Decimal`,
+`ROUND_HALF_UP` kun på slutbeløbet, loft efter beregning med begge beløb gemt,
+`DataMissing` frem for nul; `financial_claims` med `inputs`, `formula_version` og
+kode-genereret `beregningsgrundlag`, og livscyklussen fra §4 inkl. to signaturer over
+250.000 kr. (anden signatur Contract Owner), funktionsadskillelse og `fremsat` som separat
+handling. Genberegning findes som endpoint. Fund: mockuppens 96.512 kr. for prisafvigelsen
+kan ikke reproduceres af 27,60 kr. × 3.496 (= 96.489,60 kr.); koden er sandheden, tallet i
+mockuppen er en trykfejl. Ikke bygget: `approvals`-tabellen som selvstændig tabel
+(signaturerne står på kravet), opgaver ved `data_mangler` (venter på `tasks`), renter.

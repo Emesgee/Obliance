@@ -486,6 +486,18 @@ class AuditAction(enum.StrEnum):
     risk_created = "risk_created"
     risk_updated = "risk_updated"
     risk_status_changed = "risk_status_changed"
+    # added in migration 0007
+    kpi_created = "kpi_created"
+    kpi_updated = "kpi_updated"
+    measurement_recorded = "measurement_recorded"
+    measurement_superseded = "measurement_superseded"
+    sla_breach_recorded = "sla_breach_recorded"
+    penalty_term_created = "penalty_term_created"
+    penalty_term_updated = "penalty_term_updated"
+    claim_calculated = "claim_calculated"
+    claim_approved = "claim_approved"
+    claim_submitted = "claim_submitted"
+    claim_status_changed = "claim_status_changed"
 
 
 class SuggestionKind(enum.StrEnum):
@@ -501,6 +513,10 @@ class SuggestionSubject(enum.StrEnum):
     contract_intake = "contract_intake"
     sla_breach = "sla_breach"
     task = "task"
+    # added in migration 0007 (ADR-0019 §1/§2, ADR-0013 §1)
+    kpi = "kpi"
+    penalty_term = "penalty_term"
+    kpi_measurement = "kpi_measurement"
 
 
 class SuggestionStatus(enum.StrEnum):
@@ -944,3 +960,322 @@ class Risk(Base):
         DateTime(timezone=True), nullable=False, server_default=text("now()")
     )
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+# ---- KPI / SLA, penalty terms, claims (migration 0007: ADR-0019, ADR-0013) ---------------
+
+
+class KpiUnit(enum.StrEnum):
+    pct = "pct"
+    antal = "antal"
+    timer = "timer"
+    dkk = "dkk"
+    score = "score"
+
+
+class TargetOperator(enum.StrEnum):
+    gte = "gte"
+    lte = "lte"
+    eq = "eq"
+    between = "between"
+
+
+class KpiPeriod(enum.StrEnum):
+    maaned = "maaned"
+    kvartal = "kvartal"
+    halvaar = "halvaar"
+    aar = "aar"
+
+
+class MeasurementSource(enum.StrEnum):
+    manual = "manual"
+    import_ = "import"
+    document = "document"
+    integration = "integration"
+
+
+class TermType(enum.StrEnum):
+    service_credit_pct_of_fee = "service_credit_pct_of_fee"
+    service_credit_tiered = "service_credit_tiered"
+    delivery_penalty_per_week = "delivery_penalty_per_week"
+    fixed_penalty_per_breach = "fixed_penalty_per_breach"
+
+
+class PenaltyBasis(enum.StrEnum):
+    maanedligt_driftsvederlag = "maanedligt_driftsvederlag"
+    aarligt_vederlag = "aarligt_vederlag"
+    vaerdi_ikke_leverede_ordrelinjer = "vaerdi_ikke_leverede_ordrelinjer"
+    maanedens_omsaetning = "maanedens_omsaetning"
+    fast_beloeb = "fast_beloeb"
+
+
+class PenaltyTimeUnit(enum.StrEnum):
+    maaned = "maaned"
+    paabegyndt_uge = "paabegyndt_uge"
+    dag = "dag"
+    haendelse = "haendelse"
+
+
+class TermStatus(enum.StrEnum):
+    aktiv = "aktiv"
+    kraever_godkendelse = "kraever_godkendelse"  # citation flyttet/ikke_fundet (ADR-0013 afkl. 1)
+
+
+class ClaimType(enum.StrEnum):
+    service_credit = "service_credit"
+    bod = "bod"
+    prisafvigelse = "prisafvigelse"
+
+
+class ClaimStatus(enum.StrEnum):
+    beregnet = "beregnet"
+    afventer_2_signatur = "afventer_2_signatur"
+    godkendt = "godkendt"
+    fremsat = "fremsat"
+    modregnet = "modregnet"
+    betalt = "betalt"
+    afvist_af_leverandoer = "afvist_af_leverandoer"
+    frafaldet = "frafaldet"
+
+
+class Kpi(Base):
+    """A target is a clause: operator + value + unit, never a string (ADR-0019 §1)."""
+
+    __tablename__ = "kpis"
+    __table_args__ = (UniqueConstraint("contract_id", "seq"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    )
+    contract_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("contracts.id", ondelete="RESTRICT"), nullable=False
+    )
+    seq: Mapped[int] = mapped_column(Integer, nullable=False)  # K-<seq>
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    unit: Mapped[KpiUnit] = mapped_column(_pg_enum(KpiUnit, "kpi_unit"), nullable=False)
+    target_operator: Mapped[TargetOperator] = mapped_column(
+        _pg_enum(TargetOperator, "target_operator"), nullable=False
+    )
+    target_value: Mapped[Decimal] = mapped_column(Numeric(14, 4), nullable=False)
+    target_value_high: Mapped[Decimal | None] = mapped_column(Numeric(14, 4))
+    period: Mapped[KpiPeriod] = mapped_column(_pg_enum(KpiPeriod, "kpi_period"), nullable=False)
+    warn_band: Mapped[Decimal] = mapped_column(Numeric(14, 4), nullable=False)
+    penalty_term_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("penalty_terms.id", ondelete="SET NULL")
+    )
+    measurement_obligation_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("obligations.id", ondelete="SET NULL")
+    )
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
+    origin: Mapped[Origin] = mapped_column(_pg_enum(Origin, "origin_kind"), nullable=False)
+    suggestion_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("profiles.id", ondelete="SET NULL")
+    )
+    approved_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("profiles.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
+
+
+class KpiMeasurement(Base):
+    """A fact about a period (ADR-0019 §2). One live row per (kpi, period); a
+    correction supersedes with a reason — history stays."""
+
+    __tablename__ = "kpi_measurements"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    )
+    contract_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("contracts.id", ondelete="RESTRICT"), nullable=False
+    )
+    kpi_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("kpis.id", ondelete="RESTRICT"), nullable=False
+    )
+    period_start: Mapped[date] = mapped_column(Date, nullable=False)
+    period_end: Mapped[date] = mapped_column(Date, nullable=False)
+    value: Mapped[Decimal] = mapped_column(Numeric(14, 4), nullable=False)
+    source_kind: Mapped[MeasurementSource] = mapped_column(
+        _pg_enum(MeasurementSource, "measurement_source"), nullable=False
+    )
+    entered_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("profiles.id", ondelete="SET NULL")
+    )
+    approved_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("profiles.id", ondelete="SET NULL")
+    )
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    note: Mapped[str | None] = mapped_column(Text)
+    suggestion_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    supersedes_measurement_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("kpi_measurements.id", ondelete="SET NULL")
+    )
+    superseded_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("kpi_measurements.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
+
+
+class PenaltyTerm(Base):
+    """A clause's parameters as data (ADR-0013 §1). Enums, not free text; a clause
+    the model cannot express in them never becomes a row."""
+
+    __tablename__ = "penalty_terms"
+    __table_args__ = (UniqueConstraint("contract_id", "seq"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    )
+    contract_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("contracts.id", ondelete="RESTRICT"), nullable=False
+    )
+    seq: Mapped[int] = mapped_column(Integer, nullable=False)  # B-<seq>
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    term_type: Mapped[TermType] = mapped_column(_pg_enum(TermType, "term_type"), nullable=False)
+    trigger_description: Mapped[str | None] = mapped_column(Text)
+    applies_to: Mapped[str | None] = mapped_column(Text)  # KPI name the clause refers to
+    rate: Mapped[Decimal | None] = mapped_column(Numeric(9, 6))
+    tiers: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB)
+    basis: Mapped[PenaltyBasis] = mapped_column(
+        _pg_enum(PenaltyBasis, "penalty_basis"), nullable=False
+    )
+    basis_amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
+    time_unit: Mapped[PenaltyTimeUnit] = mapped_column(
+        _pg_enum(PenaltyTimeUnit, "penalty_time_unit"), nullable=False
+    )
+    cap_rate: Mapped[Decimal | None] = mapped_column(Numeric(9, 6))
+    cap_basis: Mapped[PenaltyBasis | None] = mapped_column(_pg_enum(PenaltyBasis, "penalty_basis"))
+    cap_amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
+    document_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("document_versions.id", ondelete="SET NULL")
+    )
+    status: Mapped[TermStatus] = mapped_column(
+        _pg_enum(TermStatus, "term_status"), nullable=False, server_default=TermStatus.aktiv.value
+    )
+    origin: Mapped[Origin] = mapped_column(_pg_enum(Origin, "origin_kind"), nullable=False)
+    suggestion_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("profiles.id", ondelete="SET NULL")
+    )
+    approved_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("profiles.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
+
+
+class SlaBreach(Base):
+    """A fact about a period, kept even if the claim is later dropped (ADR-0019 §5)."""
+
+    __tablename__ = "sla_breaches"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    )
+    contract_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("contracts.id", ondelete="RESTRICT"), nullable=False
+    )
+    kpi_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("kpis.id", ondelete="RESTRICT"), nullable=False
+    )
+    measurement_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("kpi_measurements.id", ondelete="RESTRICT"), nullable=False
+    )
+    period_start: Mapped[date] = mapped_column(Date, nullable=False)
+    period_end: Mapped[date] = mapped_column(Date, nullable=False)
+    target_value: Mapped[Decimal] = mapped_column(Numeric(14, 4), nullable=False)
+    actual_value: Mapped[Decimal] = mapped_column(Numeric(14, 4), nullable=False)
+    penalty_term_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("penalty_terms.id", ondelete="SET NULL")
+    )
+    claim_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    note: Mapped[str | None] = mapped_column(Text)  # e.g. "bodsklausul mangler parametre"
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
+
+
+class FinancialClaim(Base):
+    """A claim carries its own basis: inputs + term + formula version → recomputable
+    years later (ADR-0013 §3). Never a float."""
+
+    __tablename__ = "financial_claims"
+    __table_args__ = (UniqueConstraint("contract_id", "seq"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    )
+    contract_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("contracts.id", ondelete="RESTRICT"), nullable=False
+    )
+    seq: Mapped[int] = mapped_column(Integer, nullable=False)  # KR-<seq>
+    claim_type: Mapped[ClaimType] = mapped_column(_pg_enum(ClaimType, "claim_type"), nullable=False)
+    period_start: Mapped[date | None] = mapped_column(Date)
+    period_end: Mapped[date | None] = mapped_column(Date)
+    penalty_term_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("penalty_terms.id", ondelete="SET NULL")
+    )
+    breach_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("sla_breaches.id", ondelete="SET NULL")
+    )
+    inputs: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    formula_version: Mapped[str] = mapped_column(Text, nullable=False)
+    basis_text: Mapped[str] = mapped_column(Text, nullable=False)
+    amount_uncapped: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    cap_applied: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    currency: Mapped[str] = mapped_column(Text, nullable=False, server_default="DKK")
+    status: Mapped[ClaimStatus] = mapped_column(
+        _pg_enum(ClaimStatus, "claim_status"),
+        nullable=False,
+        server_default=ClaimStatus.beregnet.value,
+    )
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("profiles.id", ondelete="SET NULL")
+    )  # NULL = system (a measurement approval triggered it)
+    approved_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("profiles.id", ondelete="SET NULL")
+    )
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    second_approved_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("profiles.id", ondelete="SET NULL")
+    )
+    second_approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    submitted_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("profiles.id", ondelete="SET NULL")
+    )
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    decision_comment: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )

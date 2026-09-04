@@ -17,6 +17,8 @@ from app.domain.models import (
     AgreementForm,
     AuditAction,
     CitationKind,
+    ClaimStatus,
+    ClaimType,
     Confidence,
     Confidentiality,
     ContractPhase,
@@ -25,11 +27,16 @@ from app.domain.models import (
     Criticality,
     DocType,
     IngestStatus,
+    KpiPeriod,
+    KpiUnit,
+    MeasurementSource,
     MemberRole,
     ObligationFrequency,
     ObligationParty,
     ObligationStatus,
     Origin,
+    PenaltyBasis,
+    PenaltyTimeUnit,
     RiskCategory,
     RiskLevel,
     RiskStatus,
@@ -37,6 +44,9 @@ from app.domain.models import (
     SuggestionKind,
     SuggestionStatus,
     SuggestionSubject,
+    TargetOperator,
+    TermStatus,
+    TermType,
     VersionStatus,
     risk_level_for,
 )
@@ -466,11 +476,204 @@ class RiskPatch(BaseModel):
     status: RiskStatus | None = None
 
 
+# ---- KPI / SLA, penalty terms, claims (ADR-0019, ADR-0013) ------------------------------------
+
+
+class MeasurementOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    kpi_id: uuid.UUID
+    period_start: date
+    period_end: date
+    value: Decimal
+    source_kind: MeasurementSource
+    entered_by: uuid.UUID | None
+    approved_by: uuid.UUID | None
+    approved_at: datetime | None
+    note: str | None
+    supersedes_measurement_id: uuid.UUID | None
+    superseded_by_id: uuid.UUID | None
+    created_at: datetime
+
+
+class KpiStatusOut(BaseModel):
+    color: str  # groen · gul · roed · graa
+    reason: str
+    measured_period_start: date | None
+    value: Decimal | None
+
+
+class KpiOut(BaseModel):
+    id: uuid.UUID
+    contract_id: uuid.UUID
+    seq: int
+    ref: str
+    name: str
+    unit: KpiUnit
+    target_operator: TargetOperator
+    target_value: Decimal
+    target_value_high: Decimal | None
+    target_text: str
+    period: KpiPeriod
+    warn_band: Decimal
+    penalty_term_id: uuid.UUID | None
+    measurement_obligation_id: uuid.UUID | None
+    active: bool
+    origin: Origin
+    status: KpiStatusOut
+    measurements: list[MeasurementOut]
+    citations: list[CitationOut]
+
+
+class KpiCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    unit: KpiUnit = KpiUnit.pct
+    target_operator: TargetOperator = TargetOperator.gte
+    target_value: Decimal
+    target_value_high: Decimal | None = None
+    period: KpiPeriod = KpiPeriod.maaned
+    warn_band: Decimal | None = None
+    penalty_term_id: uuid.UUID | None = None
+    measurement_obligation_id: uuid.UUID | None = None
+
+
+class KpiPatch(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    warn_band: Decimal | None = None
+    penalty_term_id: uuid.UUID | None = None
+    measurement_obligation_id: uuid.UUID | None = None
+    active: bool | None = None
+
+
+class MeasurementIn(BaseModel):
+    period_start: date
+    value: Decimal
+    note: str | None = Field(default=None, max_length=2000)
+
+
+class SlaBreachOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    kpi_id: uuid.UUID
+    measurement_id: uuid.UUID
+    period_start: date
+    period_end: date
+    target_value: Decimal
+    actual_value: Decimal
+    penalty_term_id: uuid.UUID | None
+    claim_id: uuid.UUID | None
+    note: str | None
+    created_at: datetime
+
+
+class PenaltyTermOut(BaseModel):
+    id: uuid.UUID
+    contract_id: uuid.UUID
+    seq: int
+    ref: str
+    name: str
+    term_type: TermType
+    trigger_description: str | None
+    applies_to: str | None
+    rate: Decimal | None
+    tiers: list[dict[str, Any]] | None
+    basis: PenaltyBasis
+    basis_amount: Decimal | None
+    time_unit: PenaltyTimeUnit
+    cap_rate: Decimal | None
+    cap_amount: Decimal | None
+    status: TermStatus
+    origin: Origin
+    citations: list[CitationOut]
+
+
+class PenaltyTermCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    term_type: TermType
+    trigger_description: str | None = None
+    applies_to: str | None = None
+    rate: Decimal | None = None
+    tiers: list[dict[str, Any]] | None = None
+    basis: PenaltyBasis = PenaltyBasis.maanedligt_driftsvederlag
+    basis_amount: Decimal | None = None
+    time_unit: PenaltyTimeUnit = PenaltyTimeUnit.maaned
+    cap_rate: Decimal | None = None
+    cap_amount: Decimal | None = None
+
+
+class PenaltyTermPatch(BaseModel):
+    name: str | None = None
+    applies_to: str | None = None
+    rate: Decimal | None = None
+    basis_amount: Decimal | None = None
+    cap_rate: Decimal | None = None
+    cap_amount: Decimal | None = None
+    status: TermStatus | None = None
+
+
+class ClaimOut(BaseModel):
+    id: uuid.UUID
+    contract_id: uuid.UUID
+    seq: int
+    ref: str
+    claim_type: ClaimType
+    period_start: date | None
+    period_end: date | None
+    penalty_term_id: uuid.UUID | None
+    breach_id: uuid.UUID | None
+    # Money is None (not 0) without `okonomi` — ADR-0003 §2.
+    amount: Decimal | None
+    amount_uncapped: Decimal | None
+    cap_applied: bool
+    basis_text: str | None
+    formula_version: str
+    currency: str
+    status: ClaimStatus
+    requires_second_signature: bool
+    created_by: uuid.UUID | None
+    approved_by: uuid.UUID | None
+    approved_at: datetime | None
+    second_approved_by: uuid.UUID | None
+    submitted_at: datetime | None
+    decision_comment: str | None
+    created_at: datetime
+    updated_at: datetime
+    citations: list[CitationOut]
+
+
+class ClaimActionIn(BaseModel):
+    comment: str | None = Field(default=None, max_length=2000)
+
+
+class ClaimSettleIn(BaseModel):
+    status: ClaimStatus
+    comment: str | None = Field(default=None, max_length=2000)
+
+
+class MeasurementResultOut(BaseModel):
+    measurement: MeasurementOut
+    breach: SlaBreachOut | None
+    claim: ClaimOut | None
+
+
+class RecomputeOut(BaseModel):
+    amount: Decimal
+    amount_uncapped: Decimal
+    basis_text: str
+    formula_version: str
+    matches_stored: bool
+
+
 # ---- dashboard (ADR-0001 §Overblik: a roll-up, nothing stored) ------------------------------
 
 
 class DashboardCounts(BaseModel):
     contracts_total: int
+    kpis_total: int
+    kpis_gray: int  # "KPI'er uden data" (ADR-0019 §3)
+    claims_pending: int  # beregnet + afventer 2. signatur (ADR-0013 §4)
     contracts_active: int
     contracts_draft: int
     contracts_fortrolig: int
@@ -483,7 +686,8 @@ class DashboardCounts(BaseModel):
 
 
 class ActionItem(BaseModel):
-    suggestion_id: uuid.UUID
+    suggestion_id: uuid.UUID  # the suggestion's id, or the claim's when kind == "claim"
+    kind: str = "suggestion"  # suggestion · claim
     contract_id: uuid.UUID
     contract_ref: str
     contract_name: str

@@ -17,6 +17,8 @@ import {
   type Suggestion,
 } from "../api/client";
 import { useAuth } from "../auth";
+import ClaimsSection from "./contract/Claims";
+import KpisSection from "./contract/Kpis";
 import ObligationsSection from "./contract/Obligations";
 import RisksSection from "./contract/Risks";
 
@@ -526,6 +528,8 @@ export default function ContractDetail() {
       <MasterData c={c} />
       <AiSection contract={c} />
       <ObligationsSection contract={c} />
+      <KpisSection contract={c} />
+      <ClaimsSection contract={c} />
       <RisksSection contract={c} />
 
       <div className="mb-4 flex items-center justify-between">

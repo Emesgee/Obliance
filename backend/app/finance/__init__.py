@@ -1,3 +1,2 @@
-"""Deterministic money: penalties, service credits, claims, invoice matching
-(ADR-0013, ADR-0018). Pure functions, Decimal in, Decimal out, one function per
-term_type, unit-tested against the mockup's own numbers (gate G-10)."""
+"""Money and measurements: pure calculation (ADR-0013 §2), derived KPI status
+(ADR-0019 §3), and the measurement → breach → claim chain (ADR-0019 §5)."""

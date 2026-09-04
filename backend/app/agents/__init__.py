@@ -10,7 +10,7 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from app.agents import contract_intake, obligation_extract, risk_assess
+from app.agents import contract_intake, kpi_parse, obligation_extract, risk_assess, sla_terms
 from app.ai import resolution, suggestions
 from app.core import events, jobs
 from app.core.db import SessionLocal
@@ -21,7 +21,9 @@ AGENTS: dict[str, Any] = {
     contract_intake.AGENT_KEY: contract_intake,
     obligation_extract.AGENT_KEY: obligation_extract,
     risk_assess.AGENT_KEY: risk_assess,
+    kpi_parse.AGENT_KEY: kpi_parse,
 }
+_ = sla_terms  # imported for its materializer registrations (kpi, penalty_term)
 # The document-driven agents, in the order they run on a version switch (ADR-0006 §4).
 ON_VERSION_SWITCH = (contract_intake, obligation_extract, risk_assess)
 
@@ -61,6 +63,15 @@ def _on_version_changed(
                 trigger=AgentTrigger.event,
                 trigger_ref=str(new_version_id),
             )
+    elif doc_type in kpi_parse.REPORT_DOC_TYPES:
+        # 3. a supplier report: read the KPI values (ADR-0019 §2 `document`)
+        jobs.enqueue(
+            kpi_parse.run_for_contract,
+            org_id=organization_id,
+            contract_id=contract_id,
+            trigger=AgentTrigger.event,
+            trigger_ref=str(new_version_id),
+        )
 
 
 _registered = False
