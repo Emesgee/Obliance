@@ -193,5 +193,11 @@ fyldes fra første række (§6; verifikationsværktøjet er ikke bygget). Skrivn
 gennem `app/core/audit.py` med frosne labels og tre aktørtyper. Første skrivende
 handlinger: `ai_query`, `ai_suggestion_created/approved/rejected/expired`,
 `agent_run_completed/failed`, `contract_updated`, `contract_status_changed`.
-Login, dokumentupload og versionsskift logges endnu ikke — de kobles på i næste
-increment sammen med auditskærmen; `GET /api/contracts/{id}/audit` findes bag `audit`.
+`GET /api/contracts/{id}/audit` findes bag `audit`; auditskærmen er ikke bygget.
+
+**Andet increment (2026-09-04):** `login` og `login_failed` (afklaring 1; kun når
+e-mailen tilhører et kendt medlem, ellers findes ingen org at skrive i),
+`document_uploaded` og `document_version_made_current` (med `sha256`), samt
+`obligation_created/updated/status_changed` og `citations_reresolved` er koblet på.
+Nye handlinger tilføjes til enum'en i en migration (§3): 0005 gjorde det med
+`ALTER TYPE … ADD VALUE`.

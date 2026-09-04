@@ -17,10 +17,11 @@ from datetime import UTC, datetime
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.core import events, storage
+from app.core import audit, events, storage
 from app.core.config import settings
 from app.documents.ingest import ingest_version
 from app.domain.models import (
+    AuditAction,
     ContractDocument,
     DocType,
     DocumentVersion,
@@ -90,6 +91,24 @@ def _store_version(
     return version
 
 
+def _audit_upload(
+    session: Session, doc: ContractDocument, version: DocumentVersion, who: audit.Actor | None
+) -> None:
+    if who is None:
+        return
+    audit.record(
+        session,
+        org_id=doc.organization_id,
+        action=AuditAction.document_uploaded,
+        actor=who,
+        object_kind="document_version",
+        object_id=version.id,
+        object_label=f"{doc.title} v{version.version_no}",
+        contract_id=doc.contract_id,
+        details={"sha256": version.sha256, "filename": version.original_filename},
+    )
+
+
 def create_document(
     session: Session,
     *,
@@ -101,6 +120,7 @@ def create_document(
     data: bytes,
     filename: str,
     mime: str,
+    audit_actor: audit.Actor | None = None,
 ) -> tuple[ContractDocument, DocumentVersion]:
     doc = ContractDocument(
         organization_id=org_id,
@@ -114,9 +134,10 @@ def create_document(
     version = _store_version(
         session, doc=doc, uploader=actor, data=data, filename=filename, mime=mime
     )
+    _audit_upload(session, doc, version, audit_actor)
     # ADR-0006 §3: the first version is made current automatically on a good ingest.
     if version.ingest_status == IngestStatus.ok:
-        make_current(session, version_id=version.id, actor=actor)
+        make_current(session, version_id=version.id, actor=actor, audit_actor=audit_actor)
     return doc, version
 
 
@@ -128,14 +149,25 @@ def add_version(
     data: bytes,
     filename: str,
     mime: str,
+    audit_actor: audit.Actor | None = None,
 ) -> DocumentVersion:
     doc = session.get(ContractDocument, document_id)
     if doc is None:
         raise DocumentError("not_found", "Dokumentet findes ikke", 404)
-    return _store_version(session, doc=doc, uploader=actor, data=data, filename=filename, mime=mime)
+    version = _store_version(
+        session, doc=doc, uploader=actor, data=data, filename=filename, mime=mime
+    )
+    _audit_upload(session, doc, version, audit_actor)
+    return version
 
 
-def make_current(session: Session, *, version_id: uuid.UUID, actor: uuid.UUID) -> DocumentVersion:
+def make_current(
+    session: Session,
+    *,
+    version_id: uuid.UUID,
+    actor: uuid.UUID,
+    audit_actor: audit.Actor | None = None,
+) -> DocumentVersion:
     """Swap gaeldende in one transaction and emit document_version_changed."""
     version = session.get(DocumentVersion, version_id)
     if version is None:
@@ -163,6 +195,18 @@ def make_current(session: Session, *, version_id: uuid.UUID, actor: uuid.UUID) -
     if doc is not None:
         doc.current_version_id = version.id
     session.flush()
+    if audit_actor is not None:
+        audit.record(
+            session,
+            org_id=version.organization_id,
+            action=AuditAction.document_version_made_current,
+            actor=audit_actor,
+            object_kind="document_version",
+            object_id=version.id,
+            object_label=f"{doc.title if doc else ''} v{version.version_no}",
+            contract_id=version.contract_id,
+            details={"sha256": version.sha256, "old_version_id": str(old.id) if old else None},
+        )
     # Delivered after commit: listeners (ADR-0004 expiry, the intake agent) open
     # their own transactions and must see the switch.
     events.emit_after_commit(

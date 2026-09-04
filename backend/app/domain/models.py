@@ -477,6 +477,11 @@ class AuditAction(enum.StrEnum):
     ai_query = "ai_query"
     agent_run_completed = "agent_run_completed"
     agent_run_failed = "agent_run_failed"
+    # added in migration 0005
+    obligation_created = "obligation_created"
+    obligation_updated = "obligation_updated"
+    obligation_status_changed = "obligation_status_changed"
+    citations_reresolved = "citations_reresolved"
 
 
 class SuggestionKind(enum.StrEnum):
@@ -710,3 +715,152 @@ class AgentSetting(Base):
     )
     paused_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     paused_reason: Mapped[str | None] = mapped_column(Text)
+
+
+# ---- obligations + citations (migration 0005: ADR-0001 child, ADR-0005 §1) ------------------
+
+
+class ObligationParty(enum.StrEnum):
+    kunde = "kunde"
+    leverandoer = "leverandoer"
+    begge = "begge"
+
+
+class ObligationFrequency(enum.StrEnum):
+    engang = "engang"
+    loebende = "loebende"
+    maanedlig = "maanedlig"
+    kvartalsvis = "kvartalsvis"
+    halvaarlig = "halvaarlig"
+    aarlig = "aarlig"
+    ved_haendelse = "ved_haendelse"
+
+
+class Criticality(enum.StrEnum):
+    lav = "lav"
+    mellem = "mellem"
+    hoej = "hoej"
+    kritisk = "kritisk"
+
+
+class ObligationStatus(enum.StrEnum):
+    """Stored status. `forsinket` is derived (aaben + deadline passed) — ADR-0001."""
+
+    aaben = "aaben"
+    opfyldt = "opfyldt"
+    lukket = "lukket"
+
+
+class Origin(enum.StrEnum):
+    human = "human"
+    ai = "ai"
+
+
+class CitationKind(enum.StrEnum):
+    document = "document"
+    record = "record"
+
+
+class SuccessorStatus(enum.StrEnum):
+    uaendret = "uaendret"
+    flyttet = "flyttet"
+    ikke_fundet = "ikke_fundet"
+
+
+class Obligation(Base):
+    __tablename__ = "obligations"
+    __table_args__ = (UniqueConstraint("contract_id", "seq"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    )
+    contract_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("contracts.id", ondelete="RESTRICT"), nullable=False
+    )
+    seq: Mapped[int] = mapped_column(Integer, nullable=False)  # shown as F-<seq>
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    party: Mapped[ObligationParty] = mapped_column(
+        _pg_enum(ObligationParty, "obligation_party"), nullable=False
+    )
+    responsible_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("profiles.id", ondelete="SET NULL")
+    )
+    frequency: Mapped[ObligationFrequency] = mapped_column(
+        _pg_enum(ObligationFrequency, "obligation_frequency"), nullable=False
+    )
+    deadline: Mapped[date | None] = mapped_column(Date)
+    criticality: Mapped[Criticality] = mapped_column(
+        _pg_enum(Criticality, "criticality"), nullable=False
+    )
+    status: Mapped[ObligationStatus] = mapped_column(
+        _pg_enum(ObligationStatus, "obligation_status"),
+        nullable=False,
+        server_default=ObligationStatus.aaben.value,
+    )
+    consequence: Mapped[str | None] = mapped_column(Text)
+    note: Mapped[str | None] = mapped_column(Text)
+    origin: Mapped[Origin] = mapped_column(_pg_enum(Origin, "origin_kind"), nullable=False)
+    suggestion_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("profiles.id", ondelete="SET NULL")
+    )
+    approved_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("profiles.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
+    fulfilled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class Citation(Base):
+    """A source as a structured object (ADR-0005 §1). One row per fragment; points at
+    a document *version*, never rewritten — re-resolution adds successors (§5)."""
+
+    __tablename__ = "citations"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    )
+    contract_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("contracts.id", ondelete="RESTRICT"), nullable=False
+    )
+    subject_kind: Mapped[str] = mapped_column(Text, nullable=False)
+    subject_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    kind: Mapped[CitationKind] = mapped_column(
+        _pg_enum(CitationKind, "citation_kind"), nullable=False
+    )
+    document_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("contract_documents.id", ondelete="RESTRICT")
+    )
+    document_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("document_versions.id", ondelete="RESTRICT")
+    )
+    page_pdf: Mapped[int | None] = mapped_column(Integer)
+    page_printed: Mapped[str | None] = mapped_column(Text)
+    clause_ref: Mapped[str | None] = mapped_column(Text)
+    quote: Mapped[str | None] = mapped_column(Text)
+    quote_hash: Mapped[str | None] = mapped_column(Text)
+    verified: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    record_kind: Mapped[str | None] = mapped_column(Text)
+    record_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    label: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
+    successor_status: Mapped[SuccessorStatus | None] = mapped_column(
+        _pg_enum(SuccessorStatus, "successor_status")
+    )
+    successor_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("citations.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )

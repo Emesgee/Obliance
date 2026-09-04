@@ -12,10 +12,12 @@ import {
   type Contract,
   type ContractDocument,
   type DocumentVersion,
+  type IntakePayload,
   type Page,
   type Suggestion,
 } from "../api/client";
 import { useAuth } from "../auth";
+import ObligationsSection from "./contract/Obligations";
 
 // Contract detail: master data, documents with immutable versions (ADR-0006),
 // and the HITL queue (ADR-0004) — the Contract Intake Agent's proposal is shown
@@ -136,7 +138,7 @@ function CitationChip({ c }: { c: Citation | null }) {
   );
 }
 
-function SuggestionCard({ s, contract }: { s: Suggestion; contract: Contract }) {
+function SuggestionCard({ s, contract }: { s: Suggestion<IntakePayload>; contract: Contract }) {
   const { can } = useAuth();
   const qc = useQueryClient();
   const [comment, setComment] = useState("");
@@ -267,6 +269,9 @@ function AiSection({ contract }: { contract: Contract }) {
     queryFn: () => api<Suggestion[]>(`/api/contracts/${contract.id}/suggestions`),
     refetchInterval: running ? 2000 : false,
   });
+  const intake = (suggestions.data ?? []).filter(
+    (s): s is Suggestion<IntakePayload> => s.subject_kind === "contract_intake",
+  );
   const run = useMutation({
     mutationFn: () => api<{ status: string }>(`/api/contracts/${contract.id}/agents/contract_intake/run`, { method: "POST" }),
     onSuccess: () => {
@@ -279,7 +284,7 @@ function AiSection({ contract }: { contract: Contract }) {
   return (
     <section className="mb-6">
       <div className="mb-2 flex items-center justify-between">
-        <h2 className="text-lg font-semibold">AI-forslag</h2>
+        <h2 className="text-lg font-semibold">Stamdata fra AI</h2>
         {can("agenter") && (
           <button onClick={() => run.mutate()} disabled={run.isPending || running} className="rounded-cc-sm border border-line px-3 py-1 text-sm disabled:opacity-60">
             Kør Contract Intake Agent
@@ -291,12 +296,12 @@ function AiSection({ contract }: { contract: Contract }) {
           {runLabel(latest)}
         </p>
       )}
-      {suggestions.data && suggestions.data.length === 0 && !latest && (
+      {suggestions.data && intake.length === 0 && !latest && (
         <p className="rounded-cc border border-line bg-card p-4 text-sm text-slate">
           Ingen forslag endnu. Upload en hovedkontrakt, så læser Contract Intake Agent den.
         </p>
       )}
-      {suggestions.data?.map((s) => <SuggestionCard key={s.id} s={s} contract={contract} />)}
+      {intake.map((s) => <SuggestionCard key={s.id} s={s} contract={contract} />)}
     </section>
   );
 }
@@ -519,6 +524,7 @@ export default function ContractDetail() {
 
       <MasterData c={c} />
       <AiSection contract={c} />
+      <ObligationsSection contract={c} />
 
       <div className="mb-4 flex items-center justify-between">
         <h2 className="text-lg font-semibold">Dokumenter</h2>

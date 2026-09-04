@@ -93,6 +93,13 @@ def locate(
     return Located(False, claimed_page, None, None)
 
 
+def quote_hash(quote: str) -> str:
+    """Whitespace/case-independent hash of a quote (ADR-0005 §1 `quote_hash`)."""
+    import hashlib
+
+    return hashlib.sha256(_norm(quote).encode("utf-8")).hexdigest()
+
+
 def label(
     doc_title: str, page_pdf: int | None, page_printed: str | None, clause_ref: str | None
 ) -> str:

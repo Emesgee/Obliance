@@ -220,5 +220,13 @@ tilladelsen; `reject` afviser uden begrundelse; `expire_for_version` sættes kun
 systemet ved versionsskift), materialisering pr. `subject_kind` (§3) som registrering
 i `MATERIALIZERS` — den første er `contract_intake` i `app/agents/contract_intake.py`
 med fyld-kun-merge og `kladde → aktiv` (afklaring 2). Endnu ikke bygget: beløbsgrænser
-og `afventer_2_signatur` (approve afviser pengeforslag indtil ADR-0003's flow findes),
-bulk-godkendelse (afklaring 1) og 14-dages-eskalering (afklaring 3, venter på ADR-0017).
+og `afventer_2_signatur` (approve afviser pengeforslag indtil ADR-0003's flow findes)
+og 14-dages-eskalering (afklaring 3, venter på ADR-0017).
+
+**Andet increment (2026-09-04):** første `create`-forslag — Obligation Extraction Agent
+skriver ét forslag pr. forpligtelse med fingerprint på (dokument, punkt eller side, part,
+normaliseret titel); godkendelse materialiserer en `obligations`-række med `origin = ai`
+og det godkendende menneske som `created_by`/`approved_by`, plus `citations`-rækker.
+Bulk-godkendelse (afklaring 1) findes som `POST /api/suggestions/bulk-approve`: kun
+forslag uden beløb og med `hoej`, højst 50, hver med egen auditpost. Forpligtelser-
+skærmen viser registret og de åbne forslag som én liste med AI-mærke.

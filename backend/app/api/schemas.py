@@ -6,7 +6,7 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime, timedelta
 from decimal import Decimal
-from typing import Any
+from typing import Any, ClassVar
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, computed_field
 
@@ -16,14 +16,21 @@ from app.domain.models import (
     AgentTrigger,
     AgreementForm,
     AuditAction,
+    CitationKind,
     Confidence,
     Confidentiality,
     ContractPhase,
     ContractStatus,
     ContractTier,
+    Criticality,
     DocType,
     IngestStatus,
     MemberRole,
+    ObligationFrequency,
+    ObligationParty,
+    ObligationStatus,
+    Origin,
+    SuccessorStatus,
     SuggestionKind,
     SuggestionStatus,
     SuggestionSubject,
@@ -236,3 +243,129 @@ class AuditOut(BaseModel):
     object_label: str
     contract_id: uuid.UUID | None
     details: dict[str, Any]
+
+
+class BulkApproveIn(BaseModel):
+    ids: list[uuid.UUID] = Field(min_length=1, max_length=50)  # ADR-0004 afklaring 1
+    comment: str | None = Field(default=None, max_length=2000)
+
+
+class BulkFailure(BaseModel):
+    id: uuid.UUID
+    code: str
+    error: str
+
+
+class BulkApproveOut(BaseModel):
+    approved: list[uuid.UUID]
+    failed: list[BulkFailure]
+
+
+# ---- obligations + citations (ADR-0001, ADR-0005) ----------------------------------------
+
+
+class CitationOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    kind: CitationKind
+    document_id: uuid.UUID | None
+    document_version_id: uuid.UUID | None
+    page_pdf: int | None
+    page_printed: str | None
+    clause_ref: str | None
+    quote: str | None
+    verified: bool
+    label: str
+    successor_status: SuccessorStatus | None
+    successor_id: uuid.UUID | None
+
+
+class ObligationOut(BaseModel):
+    STORED_FIELDS: ClassVar[tuple[str, ...]] = (
+        "id",
+        "contract_id",
+        "seq",
+        "title",
+        "description",
+        "party",
+        "responsible_id",
+        "frequency",
+        "deadline",
+        "criticality",
+        "status",
+        "consequence",
+        "note",
+        "origin",
+        "suggestion_id",
+        "created_by",
+        "approved_by",
+        "created_at",
+        "updated_at",
+        "fulfilled_at",
+    )
+
+    id: uuid.UUID
+    contract_id: uuid.UUID
+    seq: int
+    title: str
+    description: str | None
+    party: ObligationParty
+    responsible_id: uuid.UUID | None
+    frequency: ObligationFrequency
+    deadline: date | None
+    criticality: Criticality
+    status: ObligationStatus
+    consequence: str | None
+    note: str | None
+    origin: Origin
+    suggestion_id: uuid.UUID | None
+    created_by: uuid.UUID | None
+    approved_by: uuid.UUID | None
+    created_at: datetime
+    updated_at: datetime
+    fulfilled_at: datetime | None
+    citations: list[CitationOut]
+    source_stale: bool  # a citation's clause is gone in the current version (ADR-0005 §5)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def ref(self) -> str:
+        return f"F-{self.seq}"
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def effective_status(self) -> str:
+        """`forsinket` is derived, never stored (ADR-0001)."""
+        if (
+            self.status == ObligationStatus.aaben
+            and self.deadline is not None
+            and self.deadline < date.today()
+        ):
+            return "forsinket"
+        return self.status.value
+
+
+class ObligationCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    description: str | None = None
+    party: ObligationParty = ObligationParty.leverandoer
+    frequency: ObligationFrequency = ObligationFrequency.engang
+    deadline: date | None = None
+    criticality: Criticality = Criticality.mellem
+    consequence: str | None = None
+    note: str | None = None
+    responsible_id: uuid.UUID | None = None
+
+
+class ObligationPatch(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    description: str | None = None
+    party: ObligationParty | None = None
+    frequency: ObligationFrequency | None = None
+    deadline: date | None = None
+    criticality: Criticality | None = None
+    consequence: str | None = None
+    note: str | None = None
+    responsible_id: uuid.UUID | None = None
+    status: ObligationStatus | None = None

@@ -114,7 +114,18 @@ export type IntakePayload = {
   model_confidence: string;
 };
 
-export type Suggestion = {
+export type ObligationPayload = {
+  title: string;
+  description: string;
+  party: "kunde" | "leverandoer" | "begge";
+  frequency: string;
+  deadline: string | null;
+  criticality: "lav" | "mellem" | "hoej" | "kritisk";
+  consequence: string | null;
+  model_confidence: string;
+};
+
+export type Suggestion<P = Record<string, unknown>> = {
   id: string;
   contract_id: string;
   agent_key: string;
@@ -122,7 +133,7 @@ export type Suggestion = {
   kind: "create" | "update";
   subject_kind: string;
   subject_id: string | null;
-  payload: IntakePayload;
+  payload: P;
   confidence: "hoej" | "mellem" | "lav";
   rationale: string;
   citations: Citation[];
@@ -151,6 +162,50 @@ export type AgentRun = {
   output_tokens: number | null;
   cost_dkk: string | null;
   error: string | null;
+};
+
+export type BulkApproveOut = { approved: string[]; failed: { id: string; code: string; error: string }[] };
+
+// ---- obligations + citations (ADR-0001, ADR-0005) --------------------------------
+
+export type CitationRow = {
+  id: string;
+  kind: "document" | "record";
+  document_id: string | null;
+  document_version_id: string | null;
+  page_pdf: number | null;
+  page_printed: string | null;
+  clause_ref: string | null;
+  quote: string | null;
+  verified: boolean;
+  label: string;
+  successor_status: "uaendret" | "flyttet" | "ikke_fundet" | null;
+  successor_id: string | null;
+};
+
+export type Obligation = {
+  id: string;
+  contract_id: string;
+  seq: number;
+  ref: string;
+  title: string;
+  description: string | null;
+  party: "kunde" | "leverandoer" | "begge";
+  responsible_id: string | null;
+  frequency: string;
+  deadline: string | null;
+  criticality: "lav" | "mellem" | "hoej" | "kritisk";
+  status: "aaben" | "opfyldt" | "lukket";
+  effective_status: "aaben" | "forsinket" | "opfyldt" | "lukket";
+  consequence: string | null;
+  note: string | null;
+  origin: "human" | "ai";
+  suggestion_id: string | null;
+  created_at: string;
+  updated_at: string;
+  fulfilled_at: string | null;
+  citations: CitationRow[];
+  source_stale: boolean;
 };
 
 export type AuditEntry = {

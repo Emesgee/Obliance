@@ -21,10 +21,26 @@ from sqlalchemy.orm import Session
 
 from app.agents import AGENTS
 from app.ai import suggestions
-from app.api.schemas import AgentRunOut, ApproveIn, AuditOut, RejectIn, SuggestionOut
+from app.api.schemas import (
+    AgentRunOut,
+    ApproveIn,
+    AuditOut,
+    BulkApproveIn,
+    BulkApproveOut,
+    BulkFailure,
+    RejectIn,
+    SuggestionOut,
+)
 from app.core import access, jobs
 from app.core.auth import Principal, current_principal, require, tenant_session
-from app.domain.models import AgentRun, AgentTrigger, AiSuggestion, AuditLog, Contract
+from app.domain.models import (
+    AgentRun,
+    AgentTrigger,
+    AiSuggestion,
+    AuditLog,
+    Confidence,
+    Contract,
+)
 
 router = APIRouter(prefix="/api", tags=["ai"])
 
@@ -55,6 +71,39 @@ def list_suggestions(
         .order_by(AiSuggestion.created_at.desc())
     ).all()
     return [SuggestionOut.model_validate(r) for r in rows]
+
+
+@router.post("/suggestions/bulk-approve", response_model=BulkApproveOut)
+def bulk_approve(
+    body: BulkApproveIn,
+    principal: Principal = Depends(require(access.HITL)),
+    session: Session = Depends(tenant_session),
+) -> BulkApproveOut:
+    """ADR-0004 afklaring 1: non-money suggestions with confidence `hoej`, max 50,
+    each with its own audit row. Anything else in the list is reported, not approved."""
+    out = BulkApproveOut(approved=[], failed=[])
+    for sid in body.ids:
+        s = session.get(AiSuggestion, sid)
+        if s is None:
+            out.failed.append(BulkFailure(id=sid, code="not_found", error="Forslaget findes ikke"))
+            continue
+        if s.confidence != Confidence.hoej or s.amount_dkk is not None:
+            out.failed.append(
+                BulkFailure(
+                    id=sid,
+                    code="not_bulk_eligible",
+                    error="Kun forslag uden beløb og med høj sikkerhed kan godkendes samlet",
+                )
+            )
+            continue
+        try:
+            suggestions.approve(
+                session, suggestion_id=sid, principal=principal, comment=body.comment
+            )
+            out.approved.append(sid)
+        except suggestions.SuggestionError as e:
+            out.failed.append(BulkFailure(id=sid, code=e.code, error=str(e)))
+    return out
 
 
 @router.post("/suggestions/{suggestion_id}/approve", response_model=SuggestionOut)

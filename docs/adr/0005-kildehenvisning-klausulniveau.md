@@ -217,3 +217,17 @@ erDiagram
 3. **Klausul-heuristik er første og eneste trin i v1.** En LLM-fallback ved nul fund
    aktiveres først, når `clause_ref`-dækningen er målt — og som ny ADR med tal
    (bidflow 0014-disciplinen).
+
+## Implementeringsnote (2026-09-04, andet increment)
+
+`citations`-tabellen fra §1 er oprettet (migration 0005) med `quote_hash`, `verified`,
+afledt `label` og `successor_status`/`successor_id`. Forslag bærer citatet som JSONB
+(ADR-0004) og materialiserer det til rækker ved godkendelse — første subject er
+`obligation`. Lokalisering (§3) sker i `app/ai/citations.py`: normaliseret eksakt match
+på den påståede side, dernæst alle sider, dernæst ord-overlap (bidflow 0055); fundet
+side overskriver agentens; `clause_ref` udledes af klausulindekset for positionen, og
+tekst over første overskrift får ingen klausul. Re-opløsning ved versionsskift (§5) er
+bygget i `app/ai/resolution.py`: `uaendret` · `flyttet` (ny række mod ny version, kædet
+med `successor_id`) · `ikke_fundet` (forpligtelsen viser "kilde forældet"). Opgaven til
+manageren venter på `tasks`. Ikke bygget: `document_chunks` (§2 trin 3) og PDF-viseren
+med markeret citat (§4) — fremviseren viser sidetekst.

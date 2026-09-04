@@ -32,7 +32,7 @@ from app.api.schemas import (
     DocumentVersionOut,
     PageOut,
 )
-from app.core import access, storage
+from app.core import access, audit, storage
 from app.core.auth import Principal, current_principal, require, tenant_session
 from app.documents import service
 from app.documents.convert import CONVERTIBLE_MIMES
@@ -156,6 +156,7 @@ async def upload_document(
             contract_id=contract_id,
             org_id=principal.org_id,
             actor=principal.user_id,
+            audit_actor=audit.human(principal),
             doc_type=doc_type,
             title=title,
             data=data,
@@ -184,6 +185,7 @@ async def upload_version(
             session,
             document_id=document_id,
             actor=principal.user_id,
+            audit_actor=audit.human(principal),
             data=data,
             filename=filename,
             mime=mime,
@@ -200,7 +202,12 @@ def make_current(
     session: Session = Depends(tenant_session),
 ) -> DocumentVersionOut:
     try:
-        version = service.make_current(session, version_id=version_id, actor=principal.user_id)
+        version = service.make_current(
+            session,
+            version_id=version_id,
+            actor=principal.user_id,
+            audit_actor=audit.human(principal),
+        )
     except service.DocumentError as e:
         raise HTTPException(e.status, detail={"error": str(e), "code": e.code}) from e
     return DocumentVersionOut.model_validate(version)

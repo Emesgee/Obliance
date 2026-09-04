@@ -11,48 +11,36 @@ overwritten — the proposal is shown next to it instead.
 # ruff: noqa: E501  — prompt text and field descriptions read better unwrapped
 from __future__ import annotations
 
-import logging
 import uuid
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import llm
+from app.agents import runtime
 from app.ai import citations, suggestions
 from app.core import audit
 from app.core.auth import Principal
-from app.core.db import SessionLocal
-from app.core.rls import tenant
 from app.domain.models import (
-    AGREEMENT_DOC_TYPES,
     AgentRun,
-    AgentRunStatus,
-    AgentSetting,
     AgentTrigger,
     AgreementForm,
     AiSuggestion,
     AuditAction,
     Confidence,
     Contract,
-    ContractDocument,
     ContractStatus,
-    DocumentClause,
-    DocumentPage,
-    DocumentVersion,
-    IngestStatus,
     SuggestionKind,
     SuggestionSubject,
 )
 
-log = logging.getLogger(__name__)
-
 AGENT_KEY = "contract_intake"
 LABEL = "AI · Contract Intake Agent"
 TASK = "contract_intake"
+SPEC = runtime.AgentSpec(AGENT_KEY, LABEL, TASK)
 
 
 # ---- the schema the model must fill (ADR-0009 §3: strict, validated) -------------------------
@@ -127,36 +115,20 @@ Regler:
 
 QUESTION = "Udfyld skemaet med kontraktens stamdata ud fra materialet ovenfor."
 
-# ---- run -------------------------------------------------------------------------------------
-
-
-def _pages_for(session: Session, version_id: uuid.UUID) -> list[llm.PageBlock]:
-    rows = session.scalars(
-        select(DocumentPage)
-        .where(DocumentPage.version_id == version_id)
-        .order_by(DocumentPage.page_pdf)
-    ).all()
-    return [llm.PageBlock(p.page_pdf, p.page_printed, p.text) for p in rows]
-
-
-def _agreement_versions(
-    session: Session, contract_id: uuid.UUID
-) -> list[tuple[ContractDocument, DocumentVersion]]:
-    docs = session.scalars(
-        select(ContractDocument)
-        .where(
-            ContractDocument.contract_id == contract_id,
-            ContractDocument.doc_type.in_(list(AGREEMENT_DOC_TYPES)),
-            ContractDocument.current_version_id.is_not(None),
-        )
-        .order_by(ContractDocument.created_at)
-    ).all()
-    out: list[tuple[ContractDocument, DocumentVersion]] = []
-    for d in docs:
-        v = session.get(DocumentVersion, d.current_version_id)
-        if v is not None and v.ingest_status == IngestStatus.ok:
-            out.append((d, v))
-    return out
+FIELD_NAMES = [
+    "name",
+    "contract_number",
+    "agreement_form",
+    "category",
+    "description",
+    "start_date",
+    "end_date",
+    "notice_period_months",
+    "last_termination_date",
+    "price_regulation",
+    "total_value_dkk",
+    "annual_value_dkk",
+]
 
 
 def _snapshot(c: Contract) -> dict[str, Any]:
@@ -179,71 +151,11 @@ def _snapshot(c: Contract) -> dict[str, Any]:
     }
 
 
-FIELD_NAMES = [
-    "name",
-    "contract_number",
-    "agreement_form",
-    "category",
-    "description",
-    "start_date",
-    "end_date",
-    "notice_period_months",
-    "last_termination_date",
-    "price_regulation",
-    "total_value_dkk",
-    "annual_value_dkk",
-]
-
-
 def _build_payload(
-    session: Session,
-    contract: Contract,
-    out: IntakeOutput,
-    versions: list[tuple[ContractDocument, DocumentVersion]],
+    verifier: runtime.Verifier, contract: Contract, out: IntakeOutput, versions: runtime.Versions
 ) -> tuple[dict[str, Any], list[dict[str, Any]], Confidence]:
-    by_doc = {str(d.id): (d, v) for d, v in versions}
-    page_cache: dict[uuid.UUID, tuple[list[citations.Page], list[citations.Clause]]] = {}
-
     def verify(cite: Cite | None) -> dict[str, Any] | None:
-        if cite is None:
-            return None
-        hit = by_doc.get(cite.document_id)
-        if hit is None:
-            return {
-                "kind": "document",
-                "document_id": cite.document_id,
-                "quote": cite.quote,
-                "verified": False,
-                "label": "ukendt dokument",
-                "page_pdf": cite.page_pdf,
-                "document_version_id": None,
-                "page_printed": None,
-                "clause_ref": None,
-            }
-        d, v = hit
-        if v.id not in page_cache:
-            pages = [
-                citations.Page(p.page_pdf, p.page_printed, p.text)
-                for p in session.scalars(
-                    select(DocumentPage).where(DocumentPage.version_id == v.id)
-                )
-            ]
-            clauses = [
-                citations.Clause(c.clause_ref, c.page_pdf, c.char_start)
-                for c in session.scalars(
-                    select(DocumentClause).where(DocumentClause.version_id == v.id)
-                )
-            ]
-            page_cache[v.id] = (pages, clauses)
-        pages, clauses = page_cache[v.id]
-        loc = citations.locate(pages, clauses, cite.quote, cite.page_pdf)
-        return citations.citation_json(
-            document_id=d.id,
-            document_version_id=v.id,
-            doc_title=d.title,
-            quote=cite.quote,
-            located=loc,
-        )
+        return verifier.verify(cite.document_id, cite.page_pdf, cite.quote) if cite else None
 
     fields: dict[str, Any] = {}
     all_cites: list[dict[str, Any]] = []
@@ -275,8 +187,48 @@ def _build_payload(
         "model_confidence": out.confidence,
         "basis_version_ids": sorted(str(v.id) for _, v in versions),
     }
-    conf = citations.cap(Confidence(out.confidence), all_verified=all_verified)
-    return payload, all_cites, conf
+    return payload, all_cites, citations.cap(Confidence(out.confidence), all_verified=all_verified)
+
+
+def _execute(s: Session, run: AgentRun, contract: Contract, versions: runtime.Versions) -> None:
+    result = llm.run(
+        s,
+        TASK,
+        schema=IntakeOutput,
+        instructions=INSTRUCTIONS,
+        material=runtime.material_for(s, versions),
+        question=QUESTION,
+        org_id=contract.organization_id,
+        actor=audit.agent(LABEL),
+        contract_id=contract.id,
+        contract_label=f"{contract.reference} {contract.name}",
+        agent_run_id=run.id,
+    )
+    runtime.record_llm(run, result)
+    payload, cites, conf = _build_payload(
+        runtime.Verifier(s, versions), contract, result.data, versions
+    )
+    fp = suggestions.fingerprint(
+        AGENT_KEY, contract.id, SuggestionSubject.contract_intake, *payload["basis_version_ids"]
+    )
+    _, created = suggestions.upsert(
+        s,
+        org_id=contract.organization_id,
+        contract_id=contract.id,
+        agent_key=AGENT_KEY,
+        agent_label=LABEL,
+        agent_run_id=run.id,
+        kind=SuggestionKind.update,
+        subject_kind=SuggestionSubject.contract_intake,
+        subject_id=contract.id,
+        payload=payload,
+        confidence=conf,
+        rationale=result.data.rationale,
+        citations=cites,
+        fp=fp,
+    )
+    run.suggestions_created = int(created)
+    run.suggestions_updated = int(not created)
 
 
 def run_for_contract(
@@ -287,130 +239,14 @@ def run_for_contract(
     trigger_ref: str | None = None,
     triggered_by: uuid.UUID | None = None,
 ) -> uuid.UUID:
-    """Entry point for jobs. Own session, system context (ADR-0002), own run row.
-    Never raises: the outcome is the agent_runs row (bidflow ADR-0054)."""
-    started = datetime.now(UTC)
-    with tenant(org_id, system=True), SessionLocal() as s:
-        run = AgentRun(
-            organization_id=org_id,
-            agent_key=AGENT_KEY,
-            contract_id=contract_id,
-            trigger=trigger,
-            trigger_ref=trigger_ref,
-            triggered_by=triggered_by,
-            task=TASK,
-            started_at=started,
-        )
-        s.add(run)
-        s.commit()
-        try:
-            _execute(s, run, org_id, contract_id)
-        except llm.LlmBudgetExceeded as e:
-            run.status = AgentRunStatus.sprunget_over
-            run.error = str(e)
-            run.error_context = {"reason": "budget"}
-        except Exception as e:  # noqa: BLE001 — the run row is the report
-            log.exception("contract_intake failed contract=%s", contract_id)
-            run.status = AgentRunStatus.fejlet
-            run.error = f"{e.__class__.__name__}: {e}"[:1000]
-            run.error_context = {"code": getattr(e, "code", None)}
-            audit.record(
-                s,
-                org_id=org_id,
-                action=AuditAction.agent_run_failed,
-                actor=audit.agent(LABEL),
-                object_kind="agent_run",
-                object_id=run.id,
-                contract_id=contract_id,
-                details={"error": run.error},
-                agent_run_id=run.id,
-            )
-        finally:
-            finished = datetime.now(UTC)
-            run.finished_at = finished
-            run.duration_ms = int((finished - started).total_seconds() * 1000)
-            s.commit()
-        return run.id
-
-
-def _execute(s: Session, run: AgentRun, org_id: uuid.UUID, contract_id: uuid.UUID) -> None:
-    setting = s.get(AgentSetting, (org_id, AGENT_KEY))
-    if setting is not None and not setting.enabled:
-        run.status = AgentRunStatus.sprunget_over
-        run.error_context = {"reason": "disabled"}
-        return
-    contract = s.get(Contract, contract_id)
-    if contract is None:
-        run.status = AgentRunStatus.fejlet
-        run.error = "Kontrakten findes ikke"
-        return
-    versions = _agreement_versions(s, contract_id)
-    run.contracts_scanned = 1
-    if not versions:
-        run.status = AgentRunStatus.sprunget_over
-        run.error = "Intet aftalegrundlag: upload en hovedkontrakt, et bilag eller et tillæg"
-        run.error_context = {"reason": "no_agreement_documents"}
-        return
-
-    material = [
-        llm.DataBlock(kind="dokument", id=str(d.id), label=d.title, pages=_pages_for(s, v.id))
-        for d, v in versions
-    ]
-    result = llm.run(
-        s,
-        TASK,
-        schema=IntakeOutput,
-        instructions=INSTRUCTIONS,
-        material=material,
-        question=QUESTION,
-        org_id=org_id,
-        actor=audit.agent(LABEL),
-        contract_id=contract_id,
-        contract_label=f"{contract.reference} {contract.name}",
-        agent_run_id=run.id,
-    )
-    run.model = result.model
-    run.input_tokens = result.usage.input_tokens
-    run.output_tokens = result.usage.output_tokens
-    run.cost_dkk = result.cost_dkk
-
-    payload, cites, conf = _build_payload(s, contract, result.data, versions)
-    fp = suggestions.fingerprint(
-        AGENT_KEY, contract_id, SuggestionSubject.contract_intake, *payload["basis_version_ids"]
-    )
-    _, created = suggestions.upsert(
-        s,
+    return runtime.run_for_contract(
+        SPEC,
+        _execute,
         org_id=org_id,
         contract_id=contract_id,
-        agent_key=AGENT_KEY,
-        agent_label=LABEL,
-        agent_run_id=run.id,
-        kind=SuggestionKind.update,
-        subject_kind=SuggestionSubject.contract_intake,
-        subject_id=contract_id,
-        payload=payload,
-        confidence=conf,
-        rationale=result.data.rationale,
-        citations=cites,
-        fp=fp,
-    )
-    run.suggestions_created = int(created)
-    run.suggestions_updated = int(not created)
-    run.status = AgentRunStatus.ok
-    audit.record(
-        s,
-        org_id=org_id,
-        action=AuditAction.agent_run_completed,
-        actor=audit.agent(LABEL),
-        object_kind="agent_run",
-        object_id=run.id,
-        object_label=f"{contract.reference} {contract.name}",
-        contract_id=contract_id,
-        details={
-            "suggestions_created": run.suggestions_created,
-            "suggestions_updated": run.suggestions_updated,
-        },
-        agent_run_id=run.id,
+        trigger=trigger,
+        trigger_ref=trigger_ref,
+        triggered_by=triggered_by,
     )
 
 

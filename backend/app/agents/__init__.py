@@ -10,14 +10,17 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from app.agents import contract_intake
-from app.ai import suggestions
+from app.agents import contract_intake, obligation_extract
+from app.ai import resolution, suggestions
 from app.core import events, jobs
 from app.core.db import SessionLocal
 from app.core.rls import tenant
 from app.domain.models import AGREEMENT_DOC_TYPES, AgentTrigger, DocType
 
-AGENTS: dict[str, Any] = {contract_intake.AGENT_KEY: contract_intake}
+AGENTS: dict[str, Any] = {
+    contract_intake.AGENT_KEY: contract_intake,
+    obligation_extract.AGENT_KEY: obligation_extract,
+}
 
 
 def _on_version_changed(
@@ -30,21 +33,31 @@ def _on_version_changed(
     doc_type: DocType,
     **_: Any,
 ) -> None:
-    # 1. expire what the switch invalidated (ADR-0004 §2) — system context, own tx
+    # 1. expire what the switch invalidated (ADR-0004 §2) and re-resolve the
+    #    register's citations against the new version (ADR-0005 §5) — system
+    #    context, own transaction
     with tenant(organization_id, system=True), SessionLocal() as s:
         suggestions.expire_for_version(
             s, org_id=organization_id, contract_id=contract_id, old_version_id=old_version_id
         )
-        s.commit()
-    # 2. re-read the agreement (ADR-0006 §4 — intake for now; obligations/risks later)
-    if doc_type in AGREEMENT_DOC_TYPES:
-        jobs.enqueue(
-            contract_intake.run_for_contract,
+        resolution.reresolve_version(
+            s,
             org_id=organization_id,
             contract_id=contract_id,
-            trigger=AgentTrigger.event,
-            trigger_ref=str(new_version_id),
+            old_version_id=old_version_id,
+            new_version_id=new_version_id,
         )
+        s.commit()
+    # 2. re-read the agreement (ADR-0006 §4): intake, then obligations. Risks/RACI later.
+    if doc_type in AGREEMENT_DOC_TYPES:
+        for agent in (contract_intake, obligation_extract):
+            jobs.enqueue(
+                agent.run_for_contract,
+                org_id=organization_id,
+                contract_id=contract_id,
+                trigger=AgentTrigger.event,
+                trigger_ref=str(new_version_id),
+            )
 
 
 _registered = False

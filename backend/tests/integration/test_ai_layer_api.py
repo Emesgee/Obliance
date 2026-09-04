@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select, text
 
 from app.core.rls import tenant
-from app.domain.models import AuditLog, UsageEvent
+from app.domain.models import AgentSetting, AuditLog, UsageEvent
 from app.llm import provider as llm_provider
 from app.llm.provider import FakeProvider, FakeResponse
 
@@ -116,11 +116,21 @@ def scripted():
 
 
 @pytest.fixture
-def cm(client, make_org, make_user, make_contract):
+def cm(client, make_org, make_user, make_contract, Session_):
     org = make_org("A")
     make_user(org, "cm@test.dk", "contract_manager", password=PW)
     contract = make_contract(org, "K-2026-001")
+    # This module tests the intake agent alone; the obligation agent (same trigger)
+    # is paused for the org, which is also a test of ADR-0010 §2's switch.
+    with tenant(org, system=True), Session_() as db:
+        db.add(AgentSetting(organization_id=org, agent_key="obligation_extract", enabled=False))
+        db.commit()
     return org, contract, _login(client, "cm@test.dk")
+
+
+def _runs(client, contract, h):
+    rows = client.get(f"/api/contracts/{contract}/agent-runs", headers=h).json()
+    return [r for r in rows if r["agent_key"] == "contract_intake"]
 
 
 def _upload(client, h, contract, data: bytes, doc_type="hovedkontrakt"):
@@ -145,7 +155,7 @@ def test_upload_triggers_intake_and_creates_a_verified_suggestion(client, cm, sc
     assert "SERVICEAFTALE" not in req.system
     assert req.output_schema is not None and "rationale" in req.output_schema["properties"]
 
-    runs = client.get(f"/api/contracts/{contract}/agent-runs", headers=h).json()
+    runs = _runs(client, contract, h)
     assert [r["status"] for r in runs] == ["ok"]
     assert runs[0]["trigger"] == "event" and runs[0]["suggestions_created"] == 1
     assert "model" not in runs[0]  # provenance is developer-only (ADR-0008)
@@ -252,7 +262,7 @@ def test_rerun_updates_instead_of_duplicating_and_new_version_expires(
     doc = _upload(client, h, contract, _pdf(PAGE1, PAGE2)).json()
     r = client.post(f"/api/contracts/{contract}/agents/contract_intake/run", headers=h)
     assert r.status_code == 202
-    runs = client.get(f"/api/contracts/{contract}/agent-runs", headers=h).json()
+    runs = _runs(client, contract, h)
     assert [r["trigger"] for r in runs] == ["manual", "event"]
     assert runs[0]["suggestions_created"] == 0 and runs[0]["suggestions_updated"] == 1
     assert len(client.get(f"/api/contracts/{contract}/suggestions", headers=h).json()) == 1
@@ -273,7 +283,7 @@ def test_agent_run_without_agreement_documents_is_skipped(client, cm, scripted):
     _upload(client, h, contract, _pdf("Driftsrapport Q2"), doc_type="rapport")
     r = client.post(f"/api/contracts/{contract}/agents/contract_intake/run", headers=h)
     assert r.status_code == 202
-    (run,) = client.get(f"/api/contracts/{contract}/agent-runs", headers=h).json()
+    (run,) = _runs(client, contract, h)
     assert run["status"] == "sprunget_over" and "aftalegrundlag" in run["error"]
     assert scripted.requests == []
 
@@ -285,7 +295,7 @@ def test_provider_failure_is_a_failed_run_not_a_failed_upload(client, cm):
         assert _upload(client, h, contract, _pdf(PAGE1, PAGE2)).status_code == 201
     finally:
         llm_provider.set_provider(None)
-    (run,) = client.get(f"/api/contracts/{contract}/agent-runs", headers=h).json()
+    (run,) = _runs(client, contract, h)
     assert run["status"] == "fejlet" and "boom" in run["error"]
     assert client.get(f"/api/contracts/{contract}/suggestions", headers=h).json() == []
 
@@ -301,7 +311,7 @@ def test_refusal_and_budget(client, cm, Session_, monkeypatch):
         _upload(client, h, contract, _pdf(PAGE1, PAGE2))
     finally:
         llm_provider.set_provider(None)
-    run = client.get(f"/api/contracts/{contract}/agent-runs", headers=h).json()[0]
+    run = _runs(client, contract, h)[0]
     assert run["status"] == "fejlet" and "refusal" in run["error"]
 
     # budget: a priced model spends; the next call is a hard stop (ADR-0010 §7)
@@ -320,7 +330,7 @@ def test_refusal_and_budget(client, cm, Session_, monkeypatch):
         db.commit()
     r = client.post(f"/api/contracts/{contract}/agents/contract_intake/run", headers=h)
     assert r.status_code == 202
-    run = client.get(f"/api/contracts/{contract}/agent-runs", headers=h).json()[0]
+    run = _runs(client, contract, h)[0]
     assert run["status"] == "sprunget_over" and run["trigger"] == "manual"
 
 
@@ -350,7 +360,7 @@ def test_audit_log_is_append_only_for_the_app_role(cm, Session_):
             with pytest.raises(Exception, match="permission denied"):
                 db.execute(text(stmt), {"i": row.id})
             db.rollback()
-        assert row.row_hash and row.prev_hash is None
+        assert row.row_hash and row.prev_hash  # chained onto the fixture's login row
 
 
 def test_other_tenant_sees_no_suggestions_or_runs(client, cm, scripted, make_org, make_user):
