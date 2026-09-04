@@ -482,6 +482,10 @@ class AuditAction(enum.StrEnum):
     obligation_updated = "obligation_updated"
     obligation_status_changed = "obligation_status_changed"
     citations_reresolved = "citations_reresolved"
+    # added in migration 0006
+    risk_created = "risk_created"
+    risk_updated = "risk_updated"
+    risk_status_changed = "risk_status_changed"
 
 
 class SuggestionKind(enum.StrEnum):
@@ -864,3 +868,79 @@ class Citation(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=text("now()")
     )
+
+
+# ---- risks (migration 0006: ADR-0001 child, mockup's Risiko) ------------------------------
+
+
+class RiskCategory(enum.StrEnum):
+    operationel = "operationel"
+    gdpr = "gdpr"
+    kommerciel = "kommerciel"
+    udbudsretlig = "udbudsretlig"
+    compliance = "compliance"
+    juridisk = "juridisk"
+    leverandoer = "leverandoer"
+    andet = "andet"
+
+
+class RiskStatus(enum.StrEnum):
+    aaben = "aaben"
+    under_haandtering = "under_haandtering"
+    lukket = "lukket"
+
+
+def risk_level_for(score: int) -> RiskLevel:
+    """Derived from sandsynlighed × konsekvens (1–25); never stored (ADR-0001)."""
+    if score >= 13:
+        return RiskLevel.hoej
+    if score >= 6:
+        return RiskLevel.mellem
+    return RiskLevel.lav
+
+
+class Risk(Base):
+    __tablename__ = "risks"
+    __table_args__ = (UniqueConstraint("contract_id", "seq"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    )
+    contract_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("contracts.id", ondelete="RESTRICT"), nullable=False
+    )
+    seq: Mapped[int] = mapped_column(Integer, nullable=False)  # shown as R-<seq>
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    category: Mapped[RiskCategory] = mapped_column(
+        _pg_enum(RiskCategory, "risk_category"), nullable=False
+    )
+    probability: Mapped[int] = mapped_column(Integer, nullable=False)  # 1–5
+    consequence: Mapped[int] = mapped_column(Integer, nullable=False)  # 1–5
+    status: Mapped[RiskStatus] = mapped_column(
+        _pg_enum(RiskStatus, "risk_status"), nullable=False, server_default=RiskStatus.aaben.value
+    )
+    responsible_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("profiles.id", ondelete="SET NULL")
+    )
+    deadline: Mapped[date | None] = mapped_column(Date)
+    mitigation: Mapped[str | None] = mapped_column(Text)  # afværgelse
+    note: Mapped[str | None] = mapped_column(Text)
+    origin: Mapped[Origin] = mapped_column(_pg_enum(Origin, "origin_kind"), nullable=False)
+    suggestion_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("profiles.id", ondelete="SET NULL")
+    )
+    approved_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("profiles.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

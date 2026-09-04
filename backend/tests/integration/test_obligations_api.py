@@ -125,7 +125,9 @@ class _Router(FakeProvider):
     def complete(self, req):
         m = re.search(r'<dokument id="([^"]+)"', req.material)
         doc_id = m.group(1) if m else "?"
-        if "Obligation Extraction Agent" in req.system:
+        if "Risk Agent" in req.system:
+            text = json.dumps({"risks": [], "rationale": "ingen"})
+        elif "Obligation Extraction Agent" in req.system:
             text = _obligations(doc_id)
             if self.reword:
                 text = text.replace(

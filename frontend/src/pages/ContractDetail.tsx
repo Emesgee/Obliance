@@ -18,6 +18,7 @@ import {
 } from "../api/client";
 import { useAuth } from "../auth";
 import ObligationsSection from "./contract/Obligations";
+import RisksSection from "./contract/Risks";
 
 // Contract detail: master data, documents with immutable versions (ADR-0006),
 // and the HITL queue (ADR-0004) — the Contract Intake Agent's proposal is shown
@@ -525,6 +526,7 @@ export default function ContractDetail() {
       <MasterData c={c} />
       <AiSection contract={c} />
       <ObligationsSection contract={c} />
+      <RisksSection contract={c} />
 
       <div className="mb-4 flex items-center justify-between">
         <h2 className="text-lg font-semibold">Dokumenter</h2>

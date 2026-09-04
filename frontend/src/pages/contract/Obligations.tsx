@@ -5,14 +5,13 @@ import {
   api,
   ApiError,
   type BulkApproveOut,
-  type CitationRow,
-  type Citation,
   type Contract,
   type Obligation,
   type ObligationPayload,
   type Suggestion,
 } from "../../api/client";
 import { useAuth } from "../../auth";
+import { Chip, ConfPill, Verdict, dkDay } from "./shared";
 
 // Forpligtelser: the register (obligations) unioned with the open AI proposals
 // (ai_suggestions, subject obligation) — ADR-0004 §Konsekvenser. The register
@@ -24,7 +23,6 @@ const FREQ: Record<string, string> = {
   halvaarlig: "Halvårlig", aarlig: "Årlig", ved_haendelse: "Ved hændelse",
 };
 const CRIT: Record<string, string> = { lav: "Lav", mellem: "Mellem", hoej: "Høj", kritisk: "Kritisk" };
-const dkDay = new Intl.DateTimeFormat("da-DK", { dateStyle: "medium" });
 
 function CritPill({ v }: { v: string }) {
   const cls = v === "kritisk" ? "bg-crit-bg text-crit" : v === "hoej" ? "bg-warn-bg text-warn" : v === "mellem" ? "bg-blue-bg text-accent" : "bg-none-bg text-none";
@@ -35,55 +33,6 @@ function StatusPill({ v }: { v: Obligation["effective_status"] }) {
   const cls = v === "forsinket" ? "bg-crit-bg text-crit" : v === "opfyldt" ? "bg-ok-bg text-ok" : v === "lukket" ? "bg-none-bg text-none" : "bg-blue-bg text-accent";
   const label = v === "forsinket" ? "Forsinket" : v === "opfyldt" ? "Opfyldt" : v === "lukket" ? "Lukket" : "Åben";
   return <span className={`pill ${cls}`}>{label}</span>;
-}
-
-function ConfPill({ v }: { v: Suggestion["confidence"] }) {
-  const cls = v === "hoej" ? "bg-ok-bg text-ok" : v === "mellem" ? "bg-warn-bg text-warn" : "bg-crit-bg text-crit";
-  return <span className={`pill ${cls}`}>Sikkerhed: {v === "hoej" ? "Høj" : v === "mellem" ? "Mellem" : "Lav"}</span>;
-}
-
-function Chip({ c }: { c: Citation | CitationRow }) {
-  const stale = "successor_status" in c && c.successor_status === "ikke_fundet";
-  const warn = !c.verified || stale;
-  return (
-    <span title={c.quote ?? ""} className={`mr-1 inline-block rounded-cc-sm border px-2 py-0.5 text-xs ${warn ? "border-warn bg-warn-bg text-warn" : "border-line bg-bg"}`}>
-      {c.label}{!c.verified && " · citat ikke fundet"}{stale && " · kilde forældet"}
-    </span>
-  );
-}
-
-function Verdict({ s, onDone }: { s: Suggestion<ObligationPayload>; onDone: () => void }) {
-  const [comment, setComment] = useState("");
-  const [rejecting, setRejecting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const approve = useMutation({
-    mutationFn: () => api<Suggestion>(`/api/suggestions/${s.id}/approve`, { method: "POST", body: JSON.stringify({ comment: comment || null }) }),
-    onSuccess: onDone,
-    onError: (e) => setError(e instanceof ApiError ? e.message : "Kunne ikke godkende."),
-  });
-  const reject = useMutation({
-    mutationFn: () => api<Suggestion>(`/api/suggestions/${s.id}/reject`, { method: "POST", body: JSON.stringify({ comment }) }),
-    onSuccess: onDone,
-    onError: (e) => setError(e instanceof ApiError ? e.message : "Kunne ikke afvise."),
-  });
-  return (
-    <div className="mt-2 flex flex-wrap items-start gap-2">
-      <input value={comment} onChange={(e) => setComment(e.target.value)} placeholder={rejecting ? "Begrundelse (påkrævet)" : "Kommentar (valgfri)"}
-        className="min-w-[16rem] flex-1 rounded-cc-sm border border-line px-3 py-1.5 text-sm" />
-      {!rejecting ? (
-        <>
-          <button onClick={() => approve.mutate()} disabled={approve.isPending} className="rounded-cc-sm bg-accent px-3 py-1.5 text-sm font-semibold text-card disabled:opacity-60">Godkend</button>
-          <button onClick={() => setRejecting(true)} className="rounded-cc-sm border border-line px-3 py-1.5 text-sm">Afvis …</button>
-        </>
-      ) : (
-        <>
-          <button onClick={() => reject.mutate()} disabled={reject.isPending || comment.trim().length < 3} className="rounded-cc-sm bg-crit px-3 py-1.5 text-sm font-semibold text-card disabled:opacity-60">Afvis med begrundelse</button>
-          <button onClick={() => setRejecting(false)} className="rounded-cc-sm border border-line px-3 py-1.5 text-sm">Fortryd</button>
-        </>
-      )}
-      {error && <p role="alert" className="w-full rounded-cc-sm bg-crit-bg px-3 py-1.5 text-sm text-crit">{error}</p>}
-    </div>
-  );
 }
 
 function CreateForm({ contractId, onDone }: { contractId: string; onDone: () => void }) {

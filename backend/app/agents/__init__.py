@@ -10,7 +10,7 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from app.agents import contract_intake, obligation_extract
+from app.agents import contract_intake, obligation_extract, risk_assess
 from app.ai import resolution, suggestions
 from app.core import events, jobs
 from app.core.db import SessionLocal
@@ -20,7 +20,10 @@ from app.domain.models import AGREEMENT_DOC_TYPES, AgentTrigger, DocType
 AGENTS: dict[str, Any] = {
     contract_intake.AGENT_KEY: contract_intake,
     obligation_extract.AGENT_KEY: obligation_extract,
+    risk_assess.AGENT_KEY: risk_assess,
 }
+# The document-driven agents, in the order they run on a version switch (ADR-0006 §4).
+ON_VERSION_SWITCH = (contract_intake, obligation_extract, risk_assess)
 
 
 def _on_version_changed(
@@ -48,9 +51,9 @@ def _on_version_changed(
             new_version_id=new_version_id,
         )
         s.commit()
-    # 2. re-read the agreement (ADR-0006 §4): intake, then obligations. Risks/RACI later.
+    # 2. re-read the agreement (ADR-0006 §4): intake, obligations, risks. RACI later.
     if doc_type in AGREEMENT_DOC_TYPES:
-        for agent in (contract_intake, obligation_extract):
+        for agent in ON_VERSION_SWITCH:
             jobs.enqueue(
                 agent.run_for_contract,
                 org_id=organization_id,

@@ -125,6 +125,42 @@ export type ObligationPayload = {
   model_confidence: string;
 };
 
+export type RiskPayload = {
+  title: string;
+  description: string;
+  category: string;
+  probability: number;
+  consequence: number;
+  mitigation: string;
+  model_confidence: string;
+};
+
+export type Risk = {
+  id: string;
+  contract_id: string;
+  seq: number;
+  ref: string;
+  title: string;
+  description: string | null;
+  category: string;
+  probability: number;
+  consequence: number;
+  score: number;
+  level: "lav" | "mellem" | "hoej";
+  status: "aaben" | "under_haandtering" | "lukket";
+  responsible_id: string | null;
+  deadline: string | null;
+  mitigation: string | null;
+  note: string | null;
+  origin: "human" | "ai";
+  suggestion_id: string | null;
+  created_at: string;
+  updated_at: string;
+  closed_at: string | null;
+  citations: CitationRow[];
+  source_stale: boolean;
+};
+
 export type Suggestion<P = Record<string, unknown>> = {
   id: string;
   contract_id: string;

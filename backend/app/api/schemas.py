@@ -30,11 +30,15 @@ from app.domain.models import (
     ObligationParty,
     ObligationStatus,
     Origin,
+    RiskCategory,
+    RiskLevel,
+    RiskStatus,
     SuccessorStatus,
     SuggestionKind,
     SuggestionStatus,
     SuggestionSubject,
     VersionStatus,
+    risk_level_for,
 )
 
 # ---- auth ----------------------------------------------------------------------
@@ -369,3 +373,94 @@ class ObligationPatch(BaseModel):
     note: str | None = None
     responsible_id: uuid.UUID | None = None
     status: ObligationStatus | None = None
+
+
+# ---- risks (ADR-0001 child; score and level derived) ---------------------------------------
+
+
+class RiskOut(BaseModel):
+    STORED_FIELDS: ClassVar[tuple[str, ...]] = (
+        "id",
+        "contract_id",
+        "seq",
+        "title",
+        "description",
+        "category",
+        "probability",
+        "consequence",
+        "status",
+        "responsible_id",
+        "deadline",
+        "mitigation",
+        "note",
+        "origin",
+        "suggestion_id",
+        "created_by",
+        "approved_by",
+        "created_at",
+        "updated_at",
+        "closed_at",
+    )
+
+    id: uuid.UUID
+    contract_id: uuid.UUID
+    seq: int
+    title: str
+    description: str | None
+    category: RiskCategory
+    probability: int
+    consequence: int
+    status: RiskStatus
+    responsible_id: uuid.UUID | None
+    deadline: date | None
+    mitigation: str | None
+    note: str | None
+    origin: Origin
+    suggestion_id: uuid.UUID | None
+    created_by: uuid.UUID | None
+    approved_by: uuid.UUID | None
+    created_at: datetime
+    updated_at: datetime
+    closed_at: datetime | None
+    citations: list[CitationOut]
+    source_stale: bool
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def ref(self) -> str:
+        return f"R-{self.seq}"
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def score(self) -> int:
+        return self.probability * self.consequence
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def level(self) -> RiskLevel:
+        return risk_level_for(self.probability * self.consequence)
+
+
+class RiskCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    description: str | None = None
+    category: RiskCategory = RiskCategory.andet
+    probability: int = Field(default=3, ge=1, le=5)
+    consequence: int = Field(default=3, ge=1, le=5)
+    deadline: date | None = None
+    mitigation: str | None = None
+    note: str | None = None
+    responsible_id: uuid.UUID | None = None
+
+
+class RiskPatch(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    description: str | None = None
+    category: RiskCategory | None = None
+    probability: int | None = Field(default=None, ge=1, le=5)
+    consequence: int | None = Field(default=None, ge=1, le=5)
+    deadline: date | None = None
+    mitigation: str | None = None
+    note: str | None = None
+    responsible_id: uuid.UUID | None = None
+    status: RiskStatus | None = None

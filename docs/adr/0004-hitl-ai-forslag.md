@@ -230,3 +230,13 @@ og det godkendende menneske som `created_by`/`approved_by`, plus `citations`-ræ
 Bulk-godkendelse (afklaring 1) findes som `POST /api/suggestions/bulk-approve`: kun
 forslag uden beløb og med `hoej`, højst 50, hver med egen auditpost. Forpligtelser-
 skærmen viser registret og de åbne forslag som én liste med AI-mærke.
+
+**Tredje increment (2026-09-04):** Risk Agent (subject `risk`) følger samme mønster:
+`create`-forslag med citat, fingerprint på (dokument, punkt eller side, kategori),
+materialisering til `risks` med `origin = ai`; sandsynlighed og konsekvens er modellens
+vurdering, mens score og niveau beregnes i kode ved læsning (ADR-0001). Kørselsløkken
+er fælles for de tre dokumentdrevne agenter (`app/agents/runtime.py`), og alle tre
+kører i rækkefølge ved et versionsskift. Gate G-07 (ADR-0023) er nu en test: worker-
+rollen har ingen skriverettigheder på `contracts`, `obligations`, `risks` eller
+`citations`.
+
