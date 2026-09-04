@@ -47,6 +47,9 @@ from app.domain.models import (
     ContractTier,
     Criticality,
     FinancialClaim,
+    ImportError_,
+    Invoice,
+    InvoiceStatus,
     Kpi,
     KpiMeasurement,
     Obligation,
@@ -129,8 +132,24 @@ def dashboard(
         .where(FinancialClaim.status.in_((ClaimStatus.beregnet, ClaimStatus.afventer_2_signatur)))
         .order_by(FinancialClaim.created_at.desc())
     ).all()
+    unmatched = session.scalar(
+        select(func.count())
+        .select_from(Invoice)
+        .where(Invoice.contract_id.is_(None), Invoice.status == InvoiceStatus.modtaget)
+    )
+    inv_pending = session.scalar(
+        select(func.count())
+        .select_from(Invoice)
+        .where(Invoice.status.in_((InvoiceStatus.kontrolleret, InvoiceStatus.matchet)))
+    )
+    errors_open = session.scalar(
+        select(func.count()).select_from(ImportError_).where(ImportError_.resolved_at.is_(None))
+    )
     counts = DashboardCounts(
         contracts_total=len(contracts),
+        invoices_unmatched=int(unmatched or 0),
+        invoices_pending=int(inv_pending or 0),
+        import_errors_open=int(errors_open or 0),
         kpis_total=len(kpis),
         kpis_gray=kpis_gray,
         claims_pending=len(pending_claims),

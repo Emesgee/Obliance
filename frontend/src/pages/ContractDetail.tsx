@@ -18,6 +18,7 @@ import {
 } from "../api/client";
 import { useAuth } from "../auth";
 import ClaimsSection from "./contract/Claims";
+import InvoicesSection from "./contract/Invoices";
 import KpisSection from "./contract/Kpis";
 import ObligationsSection from "./contract/Obligations";
 import RisksSection from "./contract/Risks";
@@ -529,6 +530,7 @@ export default function ContractDetail() {
       <AiSection contract={c} />
       <ObligationsSection contract={c} />
       <KpisSection contract={c} />
+      <InvoicesSection contract={c} />
       <ClaimsSection contract={c} />
       <RisksSection contract={c} />
 

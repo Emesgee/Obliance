@@ -12,7 +12,7 @@ the rationale instead.
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any, Literal
 
@@ -38,6 +38,7 @@ from app.domain.models import (
     PenaltyBasis,
     PenaltyTerm,
     PenaltyTimeUnit,
+    PriceTerm,
     SuggestionKind,
     SuggestionSubject,
     TargetOperator,
@@ -110,6 +111,32 @@ class PenaltyTermItem(BaseModel):
     citation: Cite
 
 
+class PriceItem(BaseModel):
+    product_ref: str | None = Field(
+        description="Varenummer/produktreference, hvis prisbilaget har en; ellers null"
+    )
+    description: str = Field(
+        description="Ydelsen eller varen som skrevet, fx 'Farmaceuttimer, dagtimer'"
+    )
+    unit: str | None = Field(description="Enhed, fx 'time', 'pakning', 'stk'")
+    agreed_unit_price: str = Field(
+        description="Aftalt enhedspris i DKK ekskl. moms som rent tal, fx 545.00"
+    )
+    valid_from: str | None = Field(description="Gyldig fra, YYYY-MM-DD, hvis angivet")
+    valid_to: str | None = Field(description="Gyldig til, YYYY-MM-DD, hvis angivet")
+    confidence: Literal["hoej", "mellem", "lav"]
+    citation: Cite
+
+
+def _date(v: Any) -> date | None:
+    if not isinstance(v, str) or not v.strip():
+        return None
+    try:
+        return date.fromisoformat(v.strip())
+    except ValueError:
+        return None
+
+
 def _dec(v: Any) -> Decimal | None:
     if v is None or v == "":
         return None
@@ -130,6 +157,7 @@ def emit(
     kpis: list[KpiItem],
     terms: list[PenaltyTermItem],
     rationale: str,
+    prices: list[PriceItem] | None = None,
 ) -> tuple[int, int]:
     created = updated = 0
     for k in kpis:
@@ -217,6 +245,48 @@ def emit(
             subject_kind=SuggestionSubject.penalty_term,
             subject_id=None,
             payload=payload,
+            confidence=conf,
+            rationale=rationale,
+            citations=[cj],
+            fp=fp,
+        )
+        created += int(was_created)
+        updated += int(not was_created)
+    for pr in prices or []:
+        if _dec(pr.agreed_unit_price) is None:
+            continue
+        cj = verifier.verify(pr.citation.document_id, pr.citation.page_pdf, pr.citation.quote)
+        conf = citations.cap(Confidence(pr.confidence), all_verified=bool(cj["verified"]))
+        anchor = cj.get("clause_ref") or f"s{cj.get('page_pdf')}"
+        key = (pr.product_ref or pr.description).strip().lower()[:60]
+        fp = suggestions.fingerprint(
+            agent_key,
+            contract.id,
+            SuggestionSubject.price_term,
+            pr.citation.document_id,
+            str(anchor),
+            key,
+        )
+        payload_p: dict[str, Any] = {
+            "product_ref": pr.product_ref,
+            "description": pr.description.strip()[:200],
+            "unit": pr.unit,
+            "agreed_unit_price": pr.agreed_unit_price,
+            "valid_from": pr.valid_from,
+            "valid_to": pr.valid_to,
+            "model_confidence": pr.confidence,
+        }
+        _, was_created = suggestions.upsert(
+            s,
+            org_id=contract.organization_id,
+            contract_id=contract.id,
+            agent_key=agent_key,
+            agent_label=agent_label,
+            agent_run_id=run.id,
+            kind=SuggestionKind.create,
+            subject_kind=SuggestionSubject.price_term,
+            subject_id=None,
+            payload=payload_p,
             confidence=conf,
             rationale=rationale,
             citations=[cj],
@@ -379,5 +449,51 @@ def materialize_term(
     return suggestions.Materialized(materialized_id=term.id, applied=["penalty_term"])
 
 
+def materialize_price(
+    session: Session, s: AiSuggestion, principal: Principal
+) -> suggestions.Materialized:
+    p = s.payload
+    price = _dec(p.get("agreed_unit_price"))
+    if price is None:
+        raise suggestions.SuggestionError("bad_payload", "Prisen kan ikke læses som tal")
+    row = PriceTerm(
+        organization_id=s.organization_id,
+        contract_id=s.contract_id,
+        product_ref=p.get("product_ref"),
+        description=str(p.get("description") or "Ydelse")[:200],
+        unit=p.get("unit"),
+        agreed_unit_price=price,
+        valid_from=_date(p.get("valid_from")),
+        valid_to=_date(p.get("valid_to")),
+        origin=Origin.ai,
+        suggestion_id=s.id,
+        created_by=principal.user_id,
+        created_at=datetime.now(UTC),
+    )
+    session.add(row)
+    session.flush()
+    add_citations(
+        session,
+        subject_kind="price_term",
+        subject_id=row.id,
+        org_id=s.organization_id,
+        contract_id=s.contract_id,
+        cites=s.citations,
+    )
+    audit.record(
+        session,
+        org_id=s.organization_id,
+        action=AuditAction.price_term_created,
+        actor=audit.human(principal),
+        object_kind="price_term",
+        object_id=row.id,
+        object_label=row.description,
+        contract_id=s.contract_id,
+        details={"origin": "ai", "suggestion_id": str(s.id), "agreed_unit_price": str(price)},
+    )
+    return suggestions.Materialized(materialized_id=row.id, applied=["price_term"])
+
+
 suggestions.MATERIALIZERS[SuggestionSubject.kpi] = materialize_kpi
+suggestions.MATERIALIZERS[SuggestionSubject.price_term] = materialize_price
 suggestions.MATERIALIZERS[SuggestionSubject.penalty_term] = materialize_term

@@ -75,6 +75,7 @@ def _extract(doc_id: str) -> str:
     return json.dumps(
         {
             "obligations": [],
+            "price_terms": [],
             "kpis": [
                 {
                     "name": "Oppetid, kritiske systemer",

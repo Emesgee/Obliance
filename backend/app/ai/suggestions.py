@@ -57,6 +57,8 @@ SUBJECT_PERMISSION: dict[SuggestionSubject, str] = {
     SuggestionSubject.kpi: access.KONTRAKT_RED,  # ADR-0019 §1: the target is a clause
     SuggestionSubject.kpi_measurement: access.KONTRAKT_RED,  # ADR-0019 §2: document → hitl
     SuggestionSubject.penalty_term: access.OKONOMI,  # ADR-0013 §1: money parameters
+    SuggestionSubject.invoice_match: access.OKONOMI,  # ADR-0018 §5
+    SuggestionSubject.price_term: access.OKONOMI,  # ADR-0018 §6: the price basis
 }
 
 

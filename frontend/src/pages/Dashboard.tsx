@@ -74,6 +74,8 @@ export default function Dashboard() {
         <Tile label="Åbne risici · høj" value={`${c.risks_open} · ${c.risks_high}`} tone={c.risks_high ? "warn" : undefined} />
         <Tile label="KPI'er uden data" value={`${c.kpis_gray} af ${c.kpis_total}`} tone={c.kpis_gray ? "warn" : undefined} />
         <Tile label="Krav til godkendelse" value={c.claims_pending} tone={c.claims_pending ? "accent" : undefined} />
+        <Tile label="Fakturaer uden kontrakt" value={c.invoices_unmatched} tone={c.invoices_unmatched ? "warn" : undefined} to="/economy" />
+        <Tile label="Fakturaer til beslutning" value={c.invoices_pending} tone={c.invoices_pending ? "accent" : undefined} to="/economy" />
         <Tile label="Årlig værdi" value={d.portfolio_annual_value === null ? "—" : dkk.format(Number(d.portfolio_annual_value))} />
       </div>
 

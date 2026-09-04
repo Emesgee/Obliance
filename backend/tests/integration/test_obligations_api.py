@@ -113,6 +113,7 @@ def _obligations(doc_id: str) -> str:
                 ),
             ],
             "kpis": [],
+            "price_terms": [],
             "penalty_terms": [],
             "rationale": "To pligter står ordret; boden er fortolket.",
         }

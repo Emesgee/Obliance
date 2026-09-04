@@ -24,11 +24,14 @@ from app.domain.models import (
     ContractPhase,
     ContractStatus,
     ContractTier,
+    ControlResult,
     Criticality,
     DocType,
     IngestStatus,
+    InvoiceStatus,
     KpiPeriod,
     KpiUnit,
+    MatchedBy,
     MeasurementSource,
     MemberRole,
     ObligationFrequency,
@@ -666,6 +669,124 @@ class RecomputeOut(BaseModel):
     matches_stored: bool
 
 
+# ---- suppliers, price terms, invoices (ADR-0018) ----------------------------------------
+
+
+class SupplierOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    cvr: str
+    name: str
+    country: str
+
+
+class SupplierCreate(BaseModel):
+    cvr: str = Field(pattern=r"^\d{8}$")
+    name: str = Field(min_length=1, max_length=200)
+    country: str = Field(default="DK", min_length=2, max_length=2)
+
+
+class ContractSupplierIn(BaseModel):
+    supplier_id: uuid.UUID | None
+
+
+class PriceTermOut(BaseModel):
+    id: uuid.UUID
+    contract_id: uuid.UUID
+    product_ref: str | None
+    description: str
+    unit: str | None
+    agreed_unit_price: Decimal
+    valid_from: date | None
+    valid_to: date | None
+    origin: Origin
+    citations: list[CitationOut]
+
+
+class PriceTermCreate(BaseModel):
+    product_ref: str | None = None
+    description: str = Field(min_length=1, max_length=200)
+    unit: str | None = None
+    agreed_unit_price: Decimal
+    valid_from: date | None = None
+    valid_to: date | None = None
+
+
+class InvoiceLineOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    line_no: int
+    description: str
+    quantity: Decimal
+    unit: str | None
+    unit_price: Decimal
+    line_total: Decimal
+    period_from: date | None
+    period_to: date | None
+    product_ref: str | None
+
+
+class InvoiceOut(BaseModel):
+    id: uuid.UUID
+    contract_id: uuid.UUID | None
+    contract_ref: str | None
+    supplier_id: uuid.UUID
+    supplier_name: str
+    supplier_cvr: str
+    invoice_number: str
+    invoice_date: date
+    due_date: date | None
+    currency: str
+    total_amount: Decimal
+    contract_reference: str | None
+    status: InvoiceStatus
+    matched_by: MatchedBy | None
+    control_result: ControlResult | None
+    control_note: str | None
+    supersedes_invoice_id: uuid.UUID | None
+    first_seen_at: datetime
+    decided_at: datetime | None
+    decision_comment: str | None
+    lines: list[InvoiceLineOut]
+    candidates: list[dict[str, str]]  # from the open invoice_match proposal, if any
+
+
+class ImportErrorOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    file_name: str
+    row_no: int
+    reason: str
+    raw: dict[str, Any]
+    created_at: datetime
+
+
+class ImportReportOut(BaseModel):
+    received: int
+    new: int
+    updated: int
+    superseded: int
+    rejected: int
+    matched: int
+    queued: int
+    errors: list[dict[str, Any]]
+
+
+class InvoiceMatchIn(BaseModel):
+    contract_id: uuid.UUID
+
+
+class InvoiceDecisionIn(BaseModel):
+    comment: str | None = Field(default=None, max_length=2000)
+
+
+class SpendOut(BaseModel):
+    by_year: dict[int, Decimal]
+
+
 # ---- dashboard (ADR-0001 §Overblik: a roll-up, nothing stored) ------------------------------
 
 
@@ -674,6 +795,9 @@ class DashboardCounts(BaseModel):
     kpis_total: int
     kpis_gray: int  # "KPI'er uden data" (ADR-0019 §3)
     claims_pending: int  # beregnet + afventer 2. signatur (ADR-0013 §4)
+    invoices_unmatched: int  # "fakturaer uden kontrakt" (ADR-0018 §5)
+    invoices_pending: int  # kontrolleret, awaiting a human (ADR-0018 §6)
+    import_errors_open: int
     contracts_active: int
     contracts_draft: int
     contracts_fortrolig: int

@@ -228,3 +228,23 @@ flowchart TB
 3. **En faktura i matchkøen i mere end 14 dage eskaleres** via ADR-0017 som kind
    `opgave` på Finance Controller. En faktura uden kontrakt er en faktura, ingen
    kontrollerer.
+
+## Implementeringsnote (2026-09-04, første increment)
+
+Bygget (migration 0008): `invoice_sources`, `invoices`, `invoice_lines`, `import_errors`,
+`price_terms` samt `suppliers` som det minimale udsnit af ADR-0020, feeden har brug for
+(CVR pr. org; oprettes aldrig af en import, §7). `file_import` er den eneste leverede
+adapter: CSV med semikolon og komma-decimal eller Excel læst som cachede værdier uden
+formelevaluering, fast kolonneskema, én række pr. linje, grænser på størrelse og
+rækkeantal. Idempotens som §4: fingerprint på (CVR, nr, beløb, dato); kendt fingerprint
+opdaterer kun `last_seen_at`; samme nr med nyt beløb erstatter med `supersedes_invoice_id`.
+Matchning som §5: reference → regel (én aktiv kontrakt hos leverandøren i perioden) →
+`invoice_match`-forslag med kandidater i matchkøen, hvor `okonomi` vælger. Kontrollen (§6)
+sammenligner linjer med aftalte priser i kode og skriver `invoice_finding`-forslag;
+godkendelse opretter et `prisafvigelse`-krav via ADR-0013's `price_deviation`. Statusnavnet
+er "Kontrol bestået — klar til godkendelse" (afklaring 2); intet endpoint skriver til et
+ERP. Ikke bygget: `sftp_drop` (afklaring 1 — venter på worker/scheduler, ADR-0010),
+`api_pull`, `invoice_check`-agenten til PDF-fakturaer, 14-dages-eskalering af matchkøen
+(afklaring 3), rydning af `raw_payload` (ADR-0012). Aftalte priser udtrækkes af Obligation
+Extraction Agent fra prisbilag som `price_term`-forslag, godkendt af `okonomi`.
+

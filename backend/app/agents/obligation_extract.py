@@ -99,6 +99,9 @@ class ExtractOutput(BaseModel):
     kpis: list[sla_terms.KpiItem] = Field(
         description="Målbare mål (KPI/SLA) med operator, værdi, enhed og periode; tom liste hvis ingen"
     )
+    price_terms: list[sla_terms.PriceItem] = Field(
+        description="Aftalte enhedspriser fra prisbilag/pristabeller; tom liste hvis ingen"
+    )
     penalty_terms: list[sla_terms.PenaltyTermItem] = Field(
         description="Bods- og service credit-klausuler som strukturerede parametre; udelad klausuler, der ikke kan udtrykkes i felterne, og nævn dem i rationale"
     )
@@ -119,6 +122,7 @@ Regler:
 6. Skriv titler, beskrivelser og rationale på dansk, neutralt og kort.
 7. Udtræk desuden målbare mål (KPI/SLA): navn, operator, værdi, enhed og måleperiode, med citat af den klausul, målet står i. "≥ 99,8 % pr. måned" er operator gte, værdi 99.8, enhed pct, periode maaned.
 8. Udtræk bods- og service credit-klausuler som parametre: type, sats (som decimalbrøk, 5 % = 0.05), beregningsbasis, tidsenhed, evt. trappe og loft, samt hvilket mål klausulen knytter sig til. Kan en klausul ikke udtrykkes i felterne, så udelad den og skriv det i rationale — gæt aldrig.
+9. Udtræk aftalte enhedspriser fra prisbilag og pristabeller: beskrivelse, enhed, pris som rent tal ekskl. moms, evt. produktreference og gyldighed, med citat af rækken.
 """
 
 QUESTION = "Udtræk alle forpligtelser i materialet ovenfor i det angivne JSON-skema."
@@ -196,6 +200,7 @@ def _execute(s: Session, run: AgentRun, contract: Contract, versions: runtime.Ve
         kpis=result.data.kpis,
         terms=result.data.penalty_terms,
         rationale=result.data.rationale,
+        prices=result.data.price_terms,
     )
     run.suggestions_created = created + c2
     run.suggestions_updated = updated + u2

@@ -225,6 +225,10 @@ class Contract(Base):
     price_regulation_date: Mapped[date | None] = mapped_column(Date)
     total_value: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
     annual_value: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
+    # ADR-0018 §5 rule 2 / ADR-0020: the counterparty (migration 0008)
+    supplier_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("suppliers.id", ondelete="SET NULL")
+    )
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("profiles.id", ondelete="SET NULL")
     )
@@ -498,6 +502,14 @@ class AuditAction(enum.StrEnum):
     claim_approved = "claim_approved"
     claim_submitted = "claim_submitted"
     claim_status_changed = "claim_status_changed"
+    # added in migration 0008
+    supplier_created = "supplier_created"
+    price_term_created = "price_term_created"
+    invoices_imported = "invoices_imported"
+    invoice_matched = "invoice_matched"
+    invoice_checked = "invoice_checked"
+    invoice_approved = "invoice_approved"
+    invoice_rejected = "invoice_rejected"
 
 
 class SuggestionKind(enum.StrEnum):
@@ -517,6 +529,9 @@ class SuggestionSubject(enum.StrEnum):
     kpi = "kpi"
     penalty_term = "penalty_term"
     kpi_measurement = "kpi_measurement"
+    # added in migration 0008 (ADR-0018 §5/§6)
+    invoice_match = "invoice_match"
+    price_term = "price_term"
 
 
 class SuggestionStatus(enum.StrEnum):
@@ -1277,5 +1292,224 @@ class FinancialClaim(Base):
         DateTime(timezone=True), nullable=False, server_default=text("now()")
     )
     updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
+
+
+# ---- suppliers, price terms, invoices (migration 0008: ADR-0018, ADR-0020 minimal) --------
+
+
+class Supplier(Base):
+    """Master data with governance (ADR-0020) — the minimal subset the invoice feed
+    needs: CVR as the natural key per org. Never auto-created by an import (§7)."""
+
+    __tablename__ = "suppliers"
+    __table_args__ = (UniqueConstraint("organization_id", "cvr"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    )
+    cvr: Mapped[str] = mapped_column(Text, nullable=False)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    country: Mapped[str] = mapped_column(Text, nullable=False, server_default="DK")
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("profiles.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
+
+
+class PriceTerm(Base):
+    """An agreed price from the prisbilag (ADR-0013's third case): what an invoice
+    line is compared against, in code."""
+
+    __tablename__ = "price_terms"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    )
+    contract_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("contracts.id", ondelete="RESTRICT"), nullable=False
+    )
+    product_ref: Mapped[str | None] = mapped_column(Text)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    unit: Mapped[str | None] = mapped_column(Text)
+    agreed_unit_price: Mapped[Decimal] = mapped_column(Numeric(14, 4), nullable=False)
+    valid_from: Mapped[date | None] = mapped_column(Date)
+    valid_to: Mapped[date | None] = mapped_column(Date)
+    origin: Mapped[Origin] = mapped_column(_pg_enum(Origin, "origin_kind"), nullable=False)
+    suggestion_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("profiles.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
+
+
+class SourceKind(enum.StrEnum):
+    file_import = "file_import"
+    sftp_drop = "sftp_drop"
+    api_pull = "api_pull"
+
+
+class InvoiceStatus(enum.StrEnum):
+    modtaget = "modtaget"
+    matchet = "matchet"
+    kontrolleret = "kontrolleret"
+    godkendt = "godkendt"
+    afvist = "afvist"
+    erstattet = "erstattet"
+
+
+class MatchedBy(enum.StrEnum):
+    reference = "reference"
+    rule = "rule"
+    suggestion = "suggestion"
+    manual = "manual"
+
+
+class ControlResult(enum.StrEnum):
+    bestaaet = "bestaaet"  # "Kontrol bestået — klar til godkendelse" (ADR-0018 afkl. 2)
+    afvigelse = "afvigelse"
+    ingen_prisgrundlag = "ingen_prisgrundlag"
+
+
+class InvoiceSource(Base):
+    __tablename__ = "invoice_sources"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    )
+    kind: Mapped[SourceKind] = mapped_column(_pg_enum(SourceKind, "source_kind"), nullable=False)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    config: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
+    last_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_sync_status: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
+
+
+class Invoice(Base):
+    """ADR-0018 §3/§4: one row per invoice, imported once (fingerprint), matched
+    to a contract in three steps, checked in code, decided by a human."""
+
+    __tablename__ = "invoices"
+    __table_args__ = (UniqueConstraint("organization_id", "fingerprint"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    )
+    contract_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("contracts.id", ondelete="RESTRICT")
+    )
+    source_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("invoice_sources.id", ondelete="SET NULL")
+    )
+    supplier_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("suppliers.id", ondelete="RESTRICT"), nullable=False
+    )
+    invoice_number: Mapped[str] = mapped_column(Text, nullable=False)
+    invoice_date: Mapped[date] = mapped_column(Date, nullable=False)
+    due_date: Mapped[date | None] = mapped_column(Date)
+    currency: Mapped[str] = mapped_column(Text, nullable=False, server_default="DKK")
+    total_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    external_ref: Mapped[str | None] = mapped_column(Text)
+    contract_reference: Mapped[str | None] = mapped_column(Text)  # as written on the invoice
+    fingerprint: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[InvoiceStatus] = mapped_column(
+        _pg_enum(InvoiceStatus, "invoice_status"),
+        nullable=False,
+        server_default=InvoiceStatus.modtaget.value,
+    )
+    matched_by: Mapped[MatchedBy | None] = mapped_column(_pg_enum(MatchedBy, "matched_by"))
+    control_result: Mapped[ControlResult | None] = mapped_column(
+        _pg_enum(ControlResult, "control_result")
+    )
+    control_note: Mapped[str | None] = mapped_column(Text)
+    supersedes_invoice_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("invoices.id", ondelete="SET NULL")
+    )
+    raw_payload: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+    first_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
+    decided_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("profiles.id", ondelete="SET NULL")
+    )
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    decision_comment: Mapped[str | None] = mapped_column(Text)
+
+
+class InvoiceLine(Base):
+    __tablename__ = "invoice_lines"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    )
+    invoice_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("invoices.id", ondelete="CASCADE"), nullable=False
+    )
+    contract_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("contracts.id", ondelete="RESTRICT")
+    )
+    line_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(14, 4), nullable=False)
+    unit: Mapped[str | None] = mapped_column(Text)
+    unit_price: Mapped[Decimal] = mapped_column(Numeric(14, 4), nullable=False)
+    line_total: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    period_from: Mapped[date | None] = mapped_column(Date)
+    period_to: Mapped[date | None] = mapped_column(Date)
+    product_ref: Mapped[str | None] = mapped_column(Text)
+
+
+class ImportError_(Base):
+    """ADR-0018 §7: rows that could not be parsed — visible, never lost in a log."""
+
+    __tablename__ = "import_errors"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    )
+    source_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("invoice_sources.id", ondelete="SET NULL")
+    )
+    file_name: Mapped[str] = mapped_column(Text, nullable=False)
+    row_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    raw: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=text("now()")
     )

@@ -345,6 +345,85 @@ export type KpiPayload = { name: string; unit: string; target_operator: string; 
 export type MeasurementPayload = { kpi_id: string; kpi_name: string; unit: string; period_start: string; period_end: string; value: string; target_text: string };
 export type PenaltyTermPayload = { name: string; term_type: string; trigger_description: string; applies_to: string | null; rate: string | null; basis: string; basis_amount: string | null; time_unit: string; cap_rate: string | null };
 
+// ---- invoices (ADR-0018) -----------------------------------------------------------
+
+export type Supplier = { id: string; cvr: string; name: string; country: string };
+
+export type PriceTerm = {
+  id: string;
+  contract_id: string;
+  product_ref: string | null;
+  description: string;
+  unit: string | null;
+  agreed_unit_price: string;
+  valid_from: string | null;
+  valid_to: string | null;
+  origin: "human" | "ai";
+  citations: CitationRow[];
+};
+
+export type InvoiceLine = {
+  id: string;
+  line_no: number;
+  description: string;
+  quantity: string;
+  unit: string | null;
+  unit_price: string;
+  line_total: string;
+  product_ref: string | null;
+};
+
+export type Invoice = {
+  id: string;
+  contract_id: string | null;
+  contract_ref: string | null;
+  supplier_name: string;
+  supplier_cvr: string;
+  invoice_number: string;
+  invoice_date: string;
+  due_date: string | null;
+  currency: string;
+  total_amount: string;
+  contract_reference: string | null;
+  status: "modtaget" | "matchet" | "kontrolleret" | "godkendt" | "afvist" | "erstattet";
+  matched_by: "reference" | "rule" | "suggestion" | "manual" | null;
+  control_result: "bestaaet" | "afvigelse" | "ingen_prisgrundlag" | null;
+  control_note: string | null;
+  supersedes_invoice_id: string | null;
+  decided_at: string | null;
+  decision_comment: string | null;
+  lines: InvoiceLine[];
+  candidates: { contract_id: string; reference: string; name: string }[];
+};
+
+export type ImportReport = {
+  received: number;
+  new: number;
+  updated: number;
+  superseded: number;
+  rejected: number;
+  matched: number;
+  queued: number;
+  errors: { row_no: number; reason: string }[];
+};
+
+export type ImportErrorRow = { id: string; file_name: string; row_no: number; reason: string; created_at: string };
+
+export type InvoiceFindingPayload = {
+  invoice_id: string;
+  invoice_number: string;
+  line_no: number;
+  description: string;
+  quantity: string;
+  agreed_unit_price: string;
+  invoiced_unit_price: string;
+  amount: string;
+  basis_text: string;
+  recommendation: string;
+};
+
+export type PriceTermPayload = { product_ref: string | null; description: string; unit: string | null; agreed_unit_price: string };
+
 // ---- dashboard (ADR-0001 §Overblik) ----------------------------------------------
 
 export type Dashboard = {
@@ -353,6 +432,9 @@ export type Dashboard = {
     kpis_total: number;
     kpis_gray: number;
     claims_pending: number;
+    invoices_unmatched: number;
+    invoices_pending: number;
+    import_errors_open: number;
     contracts_active: number;
     contracts_draft: number;
     contracts_fortrolig: number;

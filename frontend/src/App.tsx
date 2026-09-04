@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from "./auth";
 import ContractDetail from "./pages/ContractDetail";
 import Contracts from "./pages/Contracts";
 import Dashboard from "./pages/Dashboard";
+import Economy from "./pages/Economy";
 import Login from "./pages/Login";
 
 // Shell (ADR-0024 increment 1). No colour literal anywhere — every colour is a
@@ -24,7 +25,7 @@ function Shell() {
         <div className="flex items-baseline gap-5">
           <span className="text-lg font-bold tracking-tight text-navy">Obliance</span>
           <nav className="flex gap-4 text-sm">
-            {[["/", "Overblik"], ["/contracts", "Kontrakter"]].map(([to, label]) => (
+            {[["/", "Overblik"], ["/contracts", "Kontrakter"], ["/economy", "Økonomi"]].map(([to, label]) => (
               <NavLink key={to} to={to} end={to === "/"} className={({ isActive }) => (isActive ? "font-semibold text-accent" : "text-slate hover:text-ink")}>
                 {label}
               </NavLink>
@@ -58,6 +59,7 @@ export default function App() {
             <Route index element={<Dashboard />} />
             <Route path="/contracts" element={<Contracts />} />
             <Route path="/contracts/:id" element={<ContractDetail />} />
+            <Route path="/economy" element={<Economy />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Route>
